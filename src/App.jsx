@@ -147,11 +147,25 @@ const App = () => {
             </div>
         );
     } else if (isLoading) {
-        // --- UI TWEAK: Show skeleton while generating, otherwise a smaller spinner ---
         content = view === 'planning' || view === 'review' ? <PlanSkeleton /> : <div className="text-center py-20"><span className="loading loading-dots loading-lg text-primary"></span></div>;
     } else {
         switch (view) {
-            case 'planning': content = ( <div className="bg-base-200 p-6 rounded-box"> <div className="form-control"> <label className="label"> <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span> </label> <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows="3" placeholder="e.g., Low-carb, no seafood, prioritize chicken..." className="textarea textarea-bordered h-24" disabled={isLoading}></textarea> </div> <button onClick={() => processPlanGeneration(false)} disabled={!query.trim()} className="btn btn-primary w-full mt-4">Generate 7-Day Plan</button> </div> ); break;
+            case 'planning': 
+                content = ( 
+                    // --- UI TWEAK: Constrain width and center the planning form ---
+                    <div className="max-w-2xl mx-auto">
+                        <div className="bg-base-200 p-6 rounded-box"> 
+                            <div className="form-control"> 
+                                <label className="label"> 
+                                    <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span> 
+                                </label> 
+                                <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows="3" placeholder="e.g., Low-carb, no seafood, prioritize chicken..." className="textarea textarea-bordered h-24" disabled={isLoading}></textarea> 
+                            </div> 
+                            <button onClick={() => processPlanGeneration(false)} disabled={!query.trim()} className="btn btn-primary w-full mt-4">Generate 7-Day Plan</button> 
+                        </div> 
+                    </div>
+                ); 
+                break;
             case 'review': content = planData ? <ReviewView /> : null; break;
             case 'shopping': content = planData ? <ShoppingView /> : null; break;
             case 'favorites': content = <FavoritesView />; break;
@@ -170,7 +184,6 @@ const App = () => {
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-primary">Family Dinner Plans</h1>
                         <p className="opacity-70 mt-1 text-sm sm:text-base">Plan, Shop, and Cook with Precision</p>
                     </div>
-                    {/* --- UI TWEAK: Added ThemeToggle to header --- */}
                     <ThemeToggle />
                 </header>
 
