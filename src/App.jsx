@@ -228,7 +228,7 @@ const App = () => {
                 </header>
                 <div>
                     <h3 className="text-3xl font-bold mb-5">Step-by-Step Timeline</h3>
-                    <ul className="steps steps-vertical lg:steps-horizontal w-full">
+                    <ul className="steps steps-vertical w-full">
                         {timeline.map((step, index) => ( <li key={index} className="step step-primary"> <div className="text-left p-2"> <p className="font-bold text-lg">{convertToActualTime(dinnerTime, step.minutesBefore)}</p> <p className="text-sm opacity-80">{step.action}</p> </div> </li> ))}
                     </ul>
                 </div>
