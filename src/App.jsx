@@ -2,21 +2,40 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from 'firebase/firestore';
 
 // --- CONFIGURATION ---
-const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
-const apiKey = ""; // Canvas environment provides the API key
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent"; 
+const apiKey = ""; 
+
+// Environment Variables (Read directly from Vercel's standard injection)
+// Despite the compiler warning, this is the CORRECT syntax Vercel requires.
+const VERCEL_APP_ID = import.meta.env.VITE_APP_ID;
+const VERCEL_FIREBASE_CONFIG_STRING = import.meta.env.VITE_FIREBASE_CONFIG;
+const GEMINI_API_KEY_ENV = import.meta.env.VITE_GEMINI_API_KEY;
+
+// Parse the environment variables safely
+const appId = VERCEL_APP_ID || 'default-app-id';
+let firebaseConfig = {};
+let finalGeminiApiKey = GEMINI_API_KEY_ENV || apiKey; 
+
+try {
+    if (VERCEL_FIREBASE_CONFIG_STRING) {
+        firebaseConfig = JSON.parse(VERCEL_FIREBASE_CONFIG_STRING);
+    }
+} catch (e) {
+    console.error("Error parsing VITE_FIREBASE_CONFIG JSON:", e);
+}
+
+if (GEMINI_API_KEY_ENV) {
+    finalGeminiApiKey = GEMINI_API_KEY_ENV;
+}
 
 // Firestore Collection Constants
 const MEAL_PLAN_DOC_ID = 'current_plan'; 
 const FAVORITES_COLLECTION_NAME = 'favorites';
-// New collection for public sharing (though public sharing link implementation is outside of this single file, the logic for saving the share ID is included)
-const PUBLIC_PLANS_COLLECTION_NAME = 'public_plans'; 
+const SHARED_PLANS_COLLECTION_NAME = 'public/data/shared_plans';
 
 // --- JSON SCHEMA FOR AI GENERATION (Plan & List) ---
 const PLAN_RESPONSE_SCHEMA = {
@@ -36,18 +55,20 @@ const PLAN_RESPONSE_SCHEMA = {
         },
         "shoppingList": {
             type: "ARRAY",
-            description: "A flat list of all required grocery ingredients.",
+            description: "A flat, consolidated list of ALL required grocery ingredients for the new 7-day plan.",
             items: {
                 type: "OBJECT",
                 properties: {
                     "item": { "type": "STRING", "description": "The name of the ingredient, e.g., Chicken Breast" },
                     "quantity": { "type": "STRING", "description": "The quantity, e.g., 2 lbs or 1 can" },
-                    "category": { "type": "STRING", "description": "The store category/aisle, e.g., Produce, Dairy, Canned Goods" },
+                    "category": { "type": "STRING", "description": "Grocery category for shopping efficiency (e.g., Produce, Dairy, Meat, Canned Goods)." },
                     "isChecked": { "type": "BOOLEAN", "description": "Always false initially (will be merged in client)." }
-                }
+                },
+                propertyOrdering: ["item", "quantity", "category", "isChecked"]
             }
         }
-    }
+    },
+    propertyOrdering: ["weeklyPlan", "shoppingList"]
 };
 
 // --- JSON SCHEMA FOR AI GENERATION (Detailed Recipe) ---
@@ -70,10 +91,9 @@ const RECIPE_RESPONSE_SCHEMA = {
             }
         },
         "instructions": { "type": "ARRAY", "items": { "type": "STRING" } }
-    }
+    },
+    propertyOrdering: ["recipeName", "prepTimeMinutes", "cookTimeMinutes", "ingredients", "timeline", "instructions"]
 };
-
-// --- UTILITY FUNCTIONS ---
 
 /**
  * Converts a 24-hour time string (HH:mm) and a minutes offset into a 12-hour clock string.
@@ -117,46 +137,21 @@ const mergeShoppingLists = (newShoppingList, oldShoppingList) => {
         
         return {
             ...newItem,
+            // Preserve 'isChecked' status if the item existed and was checked in the old list
             isChecked: wasChecked === true 
         };
     });
 };
 
-/**
- * Ingredient Conversion Utility for Display
- */
-const convertIngredient = (value, unit) => {
-    // Simplified conversion utility for common units
-    const conversions = {
-        'cup': 236.588, 'oz': 28.3495, 'lb': 453.592, 'tsp': 4.92892, 'tbsp': 14.7868
-    };
-    
-    const lowerUnit = unit.toLowerCase().replace(/s$/, '');
-    const unitMap = {
-        'milliliter': 'ml', 'gram': 'g', 'cup': 'cup', 'ounce': 'oz', 'pound': 'lb',
-        'teaspoon': 'tsp', 'tablespoon': 'tbsp'
-    };
-
-    const targetUnit = unitMap[lowerUnit] || lowerUnit;
-
-    let convertedValue = null;
-    let targetText = '';
-
-    if (conversions[targetUnit] && !isNaN(value)) {
-        let baseValue;
-        if (['cup', 'tsp', 'tbsp'].includes(targetUnit)) {
-            baseValue = value * conversions[targetUnit]; // base in ml
-            convertedValue = (baseValue / 29.574).toFixed(1); // converted to fluid ounces
-            targetText = ` (≈ ${convertedValue} fl oz)`;
-        } else if (['oz', 'lb'].includes(targetUnit)) {
-            baseValue = value * conversions[targetUnit]; // base in grams
-            convertedValue = (baseValue / 28.35).toFixed(1); // converted to ounces
-            targetText = ` (≈ ${convertedValue} oz)`;
-        }
-    }
-    
-    return targetText;
+// --- CONSTANTS FOR UNIT CONVERSION ---
+const UNIT_CONVERSIONS = {
+    'lb': { unit: 'kg', factor: 0.453592 },
+    'oz': { unit: 'g', factor: 28.3495 },
+    'cup': { unit: 'ml', factor: 236.588 },
+    'tsp': { unit: 'ml', factor: 4.92892 },
+    'tbsp': { unit: 'ml', factor: 14.7868 }
 };
+const imperialUnits = Object.keys(UNIT_CONVERSIONS);
 
 // --- APP COMPONENT ---
 
@@ -165,10 +160,10 @@ const App = () => {
     const [db, setDb] = useState(null);
     const [userId, setUserId] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
+    const [isFirebaseInitialized, setIsFirebaseInitialized] = useState(false);
     
     // Application State
     const [query, setQuery] = useState('');
-    const [tempConstraint, setTempConstraint] = useState(''); 
     const [view, setView] = useState('planning'); 
     const [planData, setPlanData] = useState(null);
     const [detailedRecipe, setDetailedRecipe] = useState(null);
@@ -178,8 +173,7 @@ const App = () => {
     const [isLoading, setIsLoading] = useState(null);
     const [error, setError] = useState(null);
     const [favorites, setFavorites] = useState([]); 
-    const [expandedCategories, setExpandedCategories] = useState({}); 
-    const [shareLink, setShareLink] = useState(null); 
+    const [regenerationConstraint, setRegenerationConstraint] = useState('');
 
     // --- UI HANDLERS ---
     const handleSelectMeal = useCallback((index) => {
@@ -196,84 +190,80 @@ const App = () => {
         );
     };
     
-    const toggleCategory = (category) => {
-        setExpandedCategories(prev => ({
-            ...prev,
-            [category]: !prev[category]
-        }));
-    };
-    // ---------------------------------------------
-
-    // 1. Initialize Firebase and Auth
+    // --- FIREBASE INITIALIZATION ---
     useEffect(() => {
+        // If config is missing, set error state and stop
+        if (!VERCEL_FIREBASE_CONFIG_STRING || !Object.keys(firebaseConfig).length) {
+            setError("Error: Failed to initialize Firebase. The VITE_FIREBASE_CONFIG environment variable is either empty or invalid. Please check the JSON format in Vercel.");
+            return;
+        }
+
         try {
             const app = initializeApp(firebaseConfig);
             const authInstance = getAuth(app);
             const dbInstance = getFirestore(app);
             setDb(dbInstance);
+            setIsFirebaseInitialized(true);
 
             const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
                 if (user) {
                     setUserId(user.uid);
                 } else {
-                    try {
-                        const auth = getAuth(app);
-                        if (initialAuthToken) {
-                             await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    } catch (e) {
-                        console.error("Firebase Auth Error:", e);
-                        setUserId(crypto.randomUUID()); 
-                    }
+                    // Sign in anonymously if no authenticated user exists
+                    await signInAnonymously(authInstance);
+                    setUserId(authInstance.currentUser?.uid || crypto.randomUUID()); 
                 }
                 setIsAuthReady(true);
             });
             return () => unsubscribe();
         } catch (e) {
             console.error("Firebase Initialization Error:", e);
-            setError("Failed to initialize Firebase.");
+            setError(`Failed to initialize Firebase. Please check VERCEL_FIREBASE_CONFIG and ensure Firestore/Auth services are enabled.`);
         }
     }, []);
 
-    // 2. Set up Firestore Real-Time Listener for Weekly Plan & Favorites
+    // 2. Set up Firestore Real-Time Listener for Weekly Plan
     useEffect(() => {
         if (!db || !userId || !isAuthReady) return;
 
-        // Listener for Weekly Plan
-        const planDocRef = doc(db, 
+        const docRef = doc(db, 
             'artifacts', appId, 
             'users', userId, 
             'mealPlans', MEAL_PLAN_DOC_ID
         );
 
-        const unsubscribePlan = onSnapshot(planDocRef, (docSnap) => {
+        const unsubscribe = onSnapshot(docRef, (docSnap) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 setPlanData(data);
-                if (!['shopping', 'timing', 'detail', 'favorites'].includes(view)) {
+                if (!['shopping', 'timing', 'detail', 'favorites', 'public'].includes(view)) {
                     setView('review');
                 }
                 if (!query) setQuery(data.initialQuery || '');
-                // Simplified share link for development environment
-                if (data.shareId) setShareLink(`${window.location.origin}?view=public&id=${data.shareId}`); 
 
             } else {
                 setPlanData(null);
-                setView('planning'); 
+                setView('planning');
                 setDetailedRecipe(null);
-                setShareLink(null);
             }
         }, (e) => {
-            console.error("Firestore Plan Snapshot Error:", e);
-            setError("Failed to listen for real-time plan updates.");
+            console.error("Firestore Snapshot Error:", e);
         });
 
-        // Listener for Favorites
-        const favoritesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME);
+        return () => unsubscribe();
+    }, [db, userId, isAuthReady, view, query]);
+    
+    // 3. Set up Real-Time Listener for Favorites
+    useEffect(() => {
+        if (!db || !userId || !isAuthReady) return;
 
-        const unsubscribeFavorites = onSnapshot(favoritesCollectionRef, (snapshot) => {
+        const favoritesCollectionRef = collection(db, 
+            'artifacts', appId, 
+            'users', userId, 
+            FAVORITES_COLLECTION_NAME
+        );
+
+        const unsubscribe = onSnapshot(favoritesCollectionRef, (snapshot) => {
             const favoriteList = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
@@ -283,13 +273,10 @@ const App = () => {
             console.error("Favorites Snapshot Error:", e);
         });
 
-        return () => {
-            unsubscribePlan();
-            unsubscribeFavorites();
-        };
-    }, [db, userId, isAuthReady, view, query]);
+        return () => unsubscribe();
+    }, [db, userId, isAuthReady]);
 
-    // Helper for fetch with exponential backoff
+    // Helper for fetch with exponential backoff 
     const retryFetch = useCallback(async (url, options, maxRetries = 5) => {
         for (let i = 0; i < maxRetries; i++) {
             try {
@@ -310,7 +297,7 @@ const App = () => {
     }, []);
 
 
-    // 3. AI Plan Generation Handler (Handles BOTH initial generation and regeneration)
+    // 4. AI Plan Generation Handler (Handles BOTH initial generation and regeneration)
     const processPlanGeneration = useCallback(async (isRegeneration = false) => {
         if (!db || !userId || isLoading || !query.trim()) return;
 
@@ -323,10 +310,9 @@ const App = () => {
         const oldPlan = planData;
         
         let systemPrompt;
-        let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list.";
+        let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list. The shopping list MUST be grouped into common grocery store categories (e.g., Produce, Dairy, Meat, Canned Goods, Spices).";
 
         if (isRegeneration && oldPlan) {
-            // Regeneration Logic
             const mealsToUpdate = mealsToRegenerate.map(index => oldPlan.weeklyPlan[index].day).join(', ');
             
             const unchangedMeals = oldPlan.weeklyPlan
@@ -334,27 +320,24 @@ const App = () => {
                 .map(meal => `${meal.day}: ${meal.meal} (${meal.description})`)
                 .join('; ');
             
-            const constraintText = tempConstraint ? `\n\nADDITIONAL TEMPORARY CONSTRAINT (must be met for new meals): ${tempConstraint}` : '';
-
             systemPrompt = `You are updating an existing 7-day meal plan based on the user's initial query: "${oldPlan.initialQuery}".
             
             Instructions:
-            1. Generate NEW meal details (name, description) and a new consolidated shopping list, ensuring all ingredients include a store category/aisle (e.g., Produce).
-            2. Generate NEW meal details for ONLY the following days: ${mealsToUpdate}.${constraintText}
-            3. For the remaining days, you MUST retain these exact meals: ${unchangedMeals}.
-            4. Generate a single, consolidated 'shoppingList' for ALL 7 final meals. Every ingredient must include a 'category' (e.g., 'Produce', 'Dairy', 'Spices', 'Canned Goods').`;
+            1. Generate NEW meal details (name, description) for ONLY the following days: ${mealsToUpdate}.
+            2. For the remaining days, you MUST retain these exact meals: ${unchangedMeals}.
+            3. The new meals must adhere to this temporary constraint: ${regenerationConstraint || 'None'}.
+            4. Generate a single, consolidated 'shoppingList' for ALL 7 final meals. The shopping list MUST be grouped by Category.`;
             
-            userPrompt = `Replace the meals for ${mealsToUpdate}. Ensure the final output array contains 7 objects representing the full week plan.`;
+            userPrompt = `Replace the meals for ${mealsToUpdate}. Return the full 7-day plan with a new consolidated shopping list.`;
+            setRegenerationConstraint('');
 
         } else {
-            // Initial Generation Logic
-            systemPrompt = `You are a professional weekly meal planner. Your task is to generate a comprehensive 7-day dinner plan and the corresponding, consolidated shopping list based on the user's request.
+            systemPrompt = `You are a professional weekly meal planner. Generate a comprehensive 7-day dinner plan and the corresponding, consolidated shopping list based on the user's request: "${query.trim()}"
             
             Rules:
             1. Always provide exactly 7 meals (Monday to Sunday).
-            2. Consolidate ALL ingredients into a single 'shoppingList' array.
-            3. **IMPORTANT:** Every ingredient in 'shoppingList' must include a 'category' (e.g., 'Produce', 'Dairy', 'Spices', 'Canned Goods').
-            4. User Preferences: "${query.trim()}"`;
+            2. Consolidate ALL ingredients into a single 'shoppingList' array, with each item containing a 'category'.
+            3. For every ingredient in 'shoppingList', 'isChecked' must be 'false'.`;
         }
         
         try {
@@ -367,7 +350,7 @@ const App = () => {
                 }
             };
 
-            const url = `${API_URL}?key=${apiKey}`;
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
             
             const response = await retryFetch(url, {
                 method: 'POST',
@@ -388,7 +371,6 @@ const App = () => {
 
             const parsedPlan = JSON.parse(jsonString);
             
-            // 4. MERGE SHOPPING LISTS
             const mergedList = mergeShoppingLists(parsedPlan.shoppingList, oldPlan?.shoppingList);
             
             const newPlanData = {
@@ -397,12 +379,9 @@ const App = () => {
                 initialQuery: query.trim() 
             };
             
-            // Save the new plan to Firestore
             const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
             await setDoc(docRef, newPlanData);
             
-            // Reset temporary constraint after use
-            setTempConstraint('');
             setView('review'); 
 
         } catch (e) {
@@ -412,20 +391,11 @@ const App = () => {
             setIsLoading(false);
             setMealsToRegenerate([]); 
         }
-    }, [db, userId, query, planData, mealsToRegenerate, tempConstraint, retryFetch]);
+    }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch]);
 
 
     // 5. AI Detail Generation Handler (Creates recipe and timeline)
-    const generateRecipeDetail = useCallback(async (isFavoriteLoad = false, favoriteData = null) => {
-        // Feature E: Tracks when a favorite recipe is loaded/used
-        if (isFavoriteLoad && favoriteData) {
-            const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favoriteData.id);
-            await setDoc(docRef, { lastUsed: new Date().toISOString() }, { merge: true });
-            setDetailedRecipe(favoriteData); // Load locally after updating timestamp
-            setView('detail');
-            return;
-        }
-
+    const generateRecipeDetail = useCallback(async () => {
         if (!db || !userId || isLoading || selectedMealIndex === null || !planData) return;
 
         setIsLoading(true);
@@ -449,7 +419,7 @@ const App = () => {
                 }
             };
 
-            const url = `${API_URL}?key=${apiKey}`;
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
             const response = await retryFetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -476,11 +446,11 @@ const App = () => {
 
         } catch (e) {
             console.error("Recipe Generation Error:", e);
-            setError(`Failed to generate recipe details: ${e.message}.`);
+            setError(`Failed to generate recipe details: ${e.message}. Please check your query.`);
         } finally {
             setIsLoading(false);
         }
-    }, [db, userId, planData, selectedMealIndex, dinnerTime, isLoading, retryFetch]);
+    }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
     
     // --- Shopping List Update Handlers ---
     const updateShoppingList = useCallback(async (updatedList) => {
@@ -514,12 +484,13 @@ const App = () => {
         
         const newFavorite = {
             ...detailedRecipe,
+            lastUsed: new Date().toISOString(), // Use lastUsed for saving/tracking
             savedAt: new Date().toISOString(),
-            lastUsed: null, 
-            mealSource: planData.weeklyPlan[selectedMealIndex]?.meal || detailedRecipe.recipeName, 
+            mealSource: planData?.weeklyPlan[selectedMealIndex]?.meal || detailedRecipe.recipeName, 
         };
         
         try {
+            // Using setDoc with a unique ID generation (Firestore auto ID)
             await setDoc(doc(favoritesCollectionRef), newFavorite);
             console.log(`Successfully saved "${detailedRecipe.recipeName}" to Favorites.`); 
         } catch (e) {
@@ -528,22 +499,27 @@ const App = () => {
         }
     }, [db, userId, detailedRecipe, planData, selectedMealIndex]);
     
-    const loadFavorite = useCallback((favorite) => {
-        // Feature E: Update last used when loaded (calls generateRecipeDetail with isFavoriteLoad=true)
-        if (db && userId) {
-             generateRecipeDetail(true, favorite);
-        } else {
-             setDetailedRecipe(favorite);
-             setDinnerTime(favorite.dinnerTime || '19:00'); 
-             setView('detail');
+    const loadFavorite = useCallback(async (favorite) => {
+        setDetailedRecipe(favorite);
+        setDinnerTime(favorite.dinnerTime || '19:00'); 
+        setView('detail');
+
+        // Update the lastUsed timestamp in Firestore
+        if (favorite.id) {
+            const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favorite.id);
+            try {
+                await updateDoc(docRef, { lastUsed: new Date().toISOString() });
+            } catch(e) {
+                console.error("Error updating lastUsed timestamp:", e);
+            }
         }
-    }, [db, userId, generateRecipeDetail]);
+
+    }, [db, userId]);
 
     const deleteFavorite = useCallback(async (id) => {
         if (!db || !userId) return;
 
         if (!window.confirm("Are you sure you want to delete this favorite recipe?")) return;
-
 
         const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id);
         
@@ -555,87 +531,133 @@ const App = () => {
         }
     }, [db, userId]);
 
+    // --- Sharing Handlers ---
 
-    // --- Public Sharing Handler (Feature F) ---
-    const handleSharePlan = useCallback(async () => {
+    const generateShareLink = useCallback(async () => {
         if (!db || !userId || !planData) return;
-
-        setIsLoading(true);
-        setError(null);
-
-        // Check if a share link already exists
-        if (planData.shareId && shareLink) {
-            // Copy to clipboard
-            const el = document.createElement('textarea');
-            el.value = shareLink;
-            document.body.appendChild(el);
-            el.select();
-            document.execCommand('copy');
-            document.body.removeChild(el);
-            setIsLoading(false);
-            console.log("Link copied:", shareLink);
-            return;
-        }
+        
+        // 1. Save the Weekly Plan to the Public collection
+        const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId); // Using userId as document ID for simplicity
+        
+        const publicPlanData = {
+            weeklyPlan: planData.weeklyPlan,
+            initialQuery: planData.initialQuery,
+            userId: userId,
+            userName: "Dickerson Family", // Hardcoded for app name
+            sharedAt: new Date().toISOString(),
+        };
 
         try {
-            const shareId = crypto.randomUUID();
-            const publicDocRef = doc(db, 'artifacts', appId, 'public', 'data', PUBLIC_PLANS_COLLECTION_NAME, shareId);
+            await setDoc(shareDocRef, publicPlanData);
             
-            const publicData = {
-                weeklyPlan: planData.weeklyPlan,
-                initialQuery: planData.initialQuery,
-                lastUpdated: new Date().toISOString(),
-                userId: userId, 
-                shareId: shareId
-            };
-            await setDoc(publicDocRef, publicData);
-
-            const privateDocRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
-            await setDoc(privateDocRef, { shareId: shareId }, { merge: true });
-
-            const newShareLink = `${window.location.origin}?view=public&id=${shareId}`;
-            setShareLink(newShareLink);
+            // 2. Construct and display the shareable URL
+            // In a real deployed environment, you'd use the domain, e.g., https://myfamilydinners.com/share/USER_ID
+            // For now, we'll log the full path needed.
+            const path = `/share/${userId}`;
+            alert(`Shareable Link Path: ${path}\n\nTo view this link, another user would need access to the same project environment!`);
             
-            // Copy to clipboard
-            const el = document.createElement('textarea');
-            el.value = newShareLink;
-            document.body.appendChild(el);
-            el.select();
-            document.execCommand('copy');
-            document.body.removeChild(el);
-
         } catch (e) {
             console.error("Error sharing plan:", e);
-            setError("Failed to create and share the public plan link.");
-        } finally {
-            setIsLoading(false);
+            setError("Failed to generate share link.");
         }
-    }, [db, userId, planData, shareLink]);
 
+    }, [db, userId, planData]);
+
+    // --- Unit Conversion Utility ---
+    const convertIngredient = (ingredientString, targetUnit) => {
+        if (!ingredientString) return { original: 'N/A', converted: 'N/A' };
+
+        const parts = ingredientString.toLowerCase().match(/(\d+\.?\d*)\s*([a-z]+)/);
+        if (!parts) return { original: ingredientString, converted: ingredientString };
+
+        const value = parseFloat(parts[1]);
+        const unit = parts[2].trim();
+        
+        if (targetUnit === 'metric') {
+            const conversion = UNIT_CONVERSIONS[unit];
+            if (conversion) {
+                const newValue = value * conversion.factor;
+                return { 
+                    original: `${value} ${unit}`, 
+                    converted: `${newValue.toFixed(1)} ${conversion.unit}` 
+                };
+            }
+        } else if (targetUnit === 'imperial') {
+            const metricUnit = Object.keys(UNIT_CONVERSIONS).find(key => UNIT_CONVERSIONS[key].unit === unit);
+            if (metricUnit) {
+                 const conversion = UNIT_CONVERSIONS[metricUnit];
+                 const newValue = value / conversion.factor;
+                 return { 
+                    original: `${value} ${unit}`, 
+                    converted: `${newValue.toFixed(1)} ${metricUnit}` 
+                };
+            }
+        }
+        return { original: ingredientString, converted: "No standard conversion found." };
+    };
+
+    const UnitConverter = ({ ingredients }) => {
+        const [conversionType, setConversionType] = useState('metric');
+        
+        const targetUnits = conversionType === 'metric' ? ['kg', 'g', 'ml'] : ['lb', 'oz', 'cup', 'tsp', 'tbsp'];
+
+        return (
+            <div className="p-4 bg-gray-50 rounded-xl">
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                    <h4 className="text-xl font-bold text-gray-700">Unit Converter</h4>
+                    <select 
+                        value={conversionType} 
+                        onChange={(e) => setConversionType(e.target.value)}
+                        className="p-2 border rounded-lg text-sm"
+                    >
+                        <option value="metric">Convert To Metric (g/kg/ml)</option>
+                        <option value="imperial">Convert To Imperial (lb/oz/cup)</option>
+                    </select>
+                </div>
+                <ul className="space-y-1 text-sm">
+                    {ingredients.map((item, index) => {
+                        const conversion = convertIngredient(item, conversionType);
+                        return (
+                            <li key={index} className="flex justify-between border-b border-gray-200 last:border-b-0 py-1">
+                                <span className="text-gray-900 font-medium">{item}</span>
+                                <span className="text-indigo-600 font-semibold">
+                                    {conversion.converted !== conversion.original ? conversion.converted : '-'}
+                                </span>
+                            </li>
+                        );
+                    })}
+                </ul>
+            </div>
+        );
+    };
 
     // --- UI COMPONENTS ---
     
-    // A. Shopping View (Feature A: Categorization)
+    // A. Shopping View 
     const ShoppingView = () => {
-        // Group items by category and sort categories
-        const categorizedItems = planData.shoppingList.reduce((acc, item) => {
-            const category = item.category || 'Unsorted';
-            if (!acc[category]) {
-                acc[category] = [];
+        const groupedList = useMemo(() => {
+            const list = {};
+            if (planData?.shoppingList) {
+                planData.shoppingList.forEach(item => {
+                    const category = item.category || 'Uncategorized';
+                    if (!list[category]) {
+                        list[category] = [];
+                    }
+                    list[category].push(item);
+                });
             }
-            acc[category].push(item);
-            return acc;
-        }, {});
-        
-        const sortedCategories = Object.keys(categorizedItems).sort();
+            return list;
+        }, [planData?.shoppingList]);
+
+        const [openCategory, setOpenCategory] = useState(null);
 
         return (
             <div>
                 <h2 className="text-3xl font-bold text-gray-800 mb-6 flex justify-between items-center">
-                    Grocery Shopping List ({planData.shoppingList.filter(i => !i.isChecked).length} remaining)
+                    Grocery Shopping List 
                     <button 
-                        onClick={() => { if(window.confirm("Remove all checked items?")) handleClearChecked(); }}
-                        disabled={planData.shoppingList.filter(i => i.isChecked).length === 0}
+                        onClick={handleClearChecked}
+                        disabled={planData?.shoppingList?.filter(i => i.isChecked).length === 0}
                         className="bg-red-500 hover:bg-red-600 text-white text-sm font-medium py-2 px-3 rounded-full shadow transition disabled:opacity-50"
                     >
                         Clear Checked
@@ -643,133 +665,139 @@ const App = () => {
                 </h2>
 
                 <div className="space-y-4">
-                    {sortedCategories.map(category => (
-                        <div key={category} className="bg-white rounded-xl shadow-md overflow-hidden border">
+                    {Object.keys(groupedList).sort().map(category => (
+                        <div key={category} className="border border-gray-200 rounded-xl shadow-sm">
                             <button
-                                onClick={() => toggleCategory(category)}
-                                className="w-full flex justify-between items-center p-4 bg-indigo-100 hover:bg-indigo-200 transition font-extrabold text-indigo-800"
+                                onClick={() => setOpenCategory(openCategory === category ? null : category)}
+                                className="w-full text-left p-4 bg-gray-100 hover:bg-gray-200 rounded-t-xl flex justify-between items-center font-bold text-lg text-indigo-700"
                             >
-                                {category} ({categorizedItems[category].length})
-                                <svg className={`w-5 h-5 transition-transform ${expandedCategories[category] ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                {category} ({groupedList[category].length})
+                                <span>{openCategory === category ? '▲' : '▼'}</span>
                             </button>
+                            
+                            {openCategory === category && (
+                                <div className="p-4 space-y-2">
+                                    {groupedList[category].map((item, index) => {
+                                        const globalIndex = planData.shoppingList.findIndex(i => 
+                                            i.item === item.item && i.quantity === item.quantity
+                                        );
 
-                            {expandedCategories[category] && (
-                                <div className="p-3 space-y-2">
-                                    {categorizedItems[category].map((item, index) => (
-                                        <div 
-                                            key={index} 
-                                            className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition ${item.isChecked ? 'bg-green-50 opacity-80 line-through' : 'bg-gray-50 hover:bg-gray-100'}`}
-                                            onClick={() => handleCheckItem(planData.shoppingList.findIndex(i => i.item === item.item && i.quantity === item.quantity))}
-                                        >
-                                            <div className="flex flex-col">
-                                                <span className={`font-semibold text-base ${item.isChecked ? 'text-green-700' : 'text-gray-800'}`}>
-                                                    {item.item}
-                                                </span>
-                                                <span className={`text-sm ${item.isChecked ? 'text-green-600' : 'text-gray-500'}`}>
-                                                    {item.quantity}
-                                                </span>
+                                        return (
+                                            <div 
+                                                key={globalIndex} 
+                                                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition ${item.isChecked ? 'bg-green-50 opacity-70 line-through' : 'bg-white hover:bg-indigo-50'}`}
+                                                onClick={() => handleCheckItem(globalIndex)}
+                                            >
+                                                <div className="flex flex-col">
+                                                    <span className={`font-semibold text-base ${item.isChecked ? 'text-green-700' : 'text-gray-800'}`}>
+                                                        {item.item}
+                                                    </span>
+                                                    <span className={`text-xs ${item.isChecked ? 'text-green-600' : 'text-gray-500'}`}>
+                                                        {item.quantity}
+                                                    </span>
+                                                </div>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={item.isChecked}
+                                                    readOnly
+                                                    className="h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                                                />
                                             </div>
-                                            <input
-                                                type="checkbox"
-                                                checked={item.isChecked}
-                                                readOnly
-                                                className="h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
-                                            />
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
                     ))}
                 </div>
+
+                {planData?.shoppingList?.length === 0 && (
+                     <p className="text-center text-gray-500 mt-10 p-6 bg-white rounded-xl">Your shopping list is empty! Ready for a new plan?</p>
+                )}
             </div>
         );
     };
 
-    // B. Review View (Feature B: Calendar View, Feature D: Preference Refinement)
+    // B. Review View
     const ReviewView = () => (
         <div>
-            <h2 className="text-3xl font-bold text-gray-800 mb-6 flex justify-between items-center">
-                Weekly Meal Plan
-                <button
-                    onClick={handleSharePlan}
-                    disabled={isLoading}
-                    className="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg text-sm transition shadow-md disabled:opacity-50"
-                >
-                    {shareLink ? 'Link Copied!' : 'Share Plan'}
-                </button>
-            </h2>
-
-            {/* Feature D: Temporary Constraint Input */}
-            {planData && (
-                <div className="bg-yellow-50 p-4 rounded-lg mb-6 border border-yellow-300">
-                    <label className="block text-sm font-bold text-yellow-800 mb-1">
-                        Temporary Regeneration Constraint (Optional)
-                    </label>
-                    <textarea
-                        value={tempConstraint}
-                        onChange={(e) => setTempConstraint(e.target.value)}
-                        rows="1"
-                        placeholder="e.g., must use up leftover chicken breast or need low-carb Tuesday"
-                        className="w-full p-2 border border-yellow-200 rounded-lg text-sm focus:ring-yellow-500"
+            <h2 className="text-3xl font-bold text-gray-800 mb-6">Review & Select Meals</h2>
+            
+            <div className="flex space-x-4 mb-6">
+                {mealsToRegenerate.length > 0 && (
+                    <input 
+                        type="text"
+                        placeholder="e.g., Use leftover chicken, Make vegetarian"
+                        value={regenerationConstraint}
+                        onChange={(e) => setRegenerationConstraint(e.target.value)}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg"
                     />
-                </div>
-            )}
-
-            {mealsToRegenerate.length > 0 && (
+                )}
                 <button 
                     onClick={() => processPlanGeneration(true)}
-                    className="mb-6 w-full bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-4 rounded-lg transition shadow-lg"
+                    disabled={mealsToRegenerate.length === 0}
+                    className="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-3 px-4 rounded-lg transition shadow-lg disabled:opacity-50"
                 >
-                    Regenerate {mealsToRegenerate.length} Selected Meal(s)
+                    Regenerate {mealsToRegenerate.length || ''} Meal(s)
                 </button>
-            )}
-            
-            {/* Feature B: Calendar Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            </div>
+
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {planData.weeklyPlan.map((meal, index) => {
                     const isSelected = mealsToRegenerate.includes(index);
                     return (
                     <div key={index} 
-                         className={`bg-white p-4 rounded-xl shadow-md flex flex-col justify-between h-48 transition duration-150 ${isSelected ? 'border-4 border-yellow-500 ring-2 ring-yellow-300' : 'border-b-4 border-indigo-500'}`}>
+                         className={`bg-white p-4 rounded-xl shadow-md flex flex-col justify-between transition duration-150 ${isSelected ? 'border-4 border-yellow-500 ring-2 ring-yellow-300' : 'border-l-4 border-indigo-500'}`}>
                         <div className="flex-1">
-                            <div className="flex justify-between items-start">
-                                <h3 className="text-sm font-extrabold text-indigo-700">{meal.day}</h3>
+                            <h3 className="text-lg font-bold text-indigo-700 mb-1">{meal.day}</h3>
+                            <p className="text-md font-semibold text-gray-800 mb-2">{meal.meal}</p>
+                            <p className="text-gray-500 text-sm">{meal.description}</p>
+                        </div>
+                        <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
+                            <label className="flex items-center space-x-2 cursor-pointer text-sm font-medium text-gray-700">
                                 <input
                                     type="checkbox"
                                     checked={isSelected}
                                     onChange={() => toggleMealSelection(index)}
                                     className="h-4 w-4 text-yellow-500 rounded border-gray-300 focus:ring-yellow-500"
                                 />
-                            </div>
-                            <p className="text-base font-semibold text-gray-800 mt-1">{meal.meal}</p>
-                            <p className="text-gray-500 text-xs mt-1 overflow-hidden h-10">{meal.description}</p>
+                                <span>Replace</span>
+                            </label>
+                            <button 
+                                onClick={() => handleSelectMeal(index)}
+                                className="bg-green-500 hover:bg-green-600 text-white font-semibold py-1 px-3 text-sm rounded-lg shadow transition"
+                            >
+                                Get Recipe
+                            </button>
                         </div>
-                        <button 
-                            onClick={() => handleSelectMeal(index)}
-                            className="mt-2 bg-green-500 hover:bg-green-600 text-white font-semibold py-1 px-2 text-xs rounded-lg shadow transition w-full"
-                        >
-                            Get Recipe & Time
-                        </button>
                     </div>
                 );})}
             </div>
             
-            <button 
-                onClick={() => setView('planning')}
-                className="mt-8 w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-lg transition shadow-lg"
-            >
-                Start Over with New Preferences
-            </button>
+            <div className="mt-8 flex justify-between space-x-4">
+                <button 
+                    onClick={generateShareLink}
+                    className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-3 px-4 rounded-lg transition shadow-lg"
+                >
+                    Share Plan
+                </button>
+                <button 
+                    onClick={() => setView('planning')}
+                    className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-4 rounded-lg transition shadow-lg"
+                >
+                    Start Over (New Preferences)
+                </button>
+            </div>
         </div>
     );
 
-    // C. Timing View (unchanged)
+    // C. Timing View 
     const TimingView = () => {
         const meal = planData.weeklyPlan[selectedMealIndex];
         return (
             <div className="p-8 bg-indigo-50 rounded-xl shadow-inner text-center">
-                <h2 className="text-3xl font-bold text-indigo-800 mb-2">Detailed Planning for {meal.day}</h2>
+                <h2 className="text-3xl font-bold text-indigo-800 mb-2">Planning Timeline for {meal.day}</h2>
                 <p className="text-xl text-gray-700 mb-6">Meal: <span className="font-bold">{meal.meal}</span></p>
 
                 <label htmlFor="dinner-time" className="block text-lg font-medium text-gray-700 mb-3">
@@ -785,7 +813,7 @@ const App = () => {
                 />
 
                 <button
-                    onClick={() => generateRecipeDetail(false)} 
+                    onClick={generateRecipeDetail}
                     disabled={isLoading}
                     className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition shadow-lg disabled:opacity-50"
                 >
@@ -795,7 +823,7 @@ const App = () => {
         );
     };
     
-    // D. Detail View (Feature C: Conversion Utility)
+    // D. Detail View 
     const DetailView = () => {
         if (!detailedRecipe) return <p className="text-center text-red-500">Error loading recipe detail.</p>;
 
@@ -828,7 +856,7 @@ const App = () => {
                     )}
                 </header>
 
-                {/* Timeline Section */}
+                /* Timeline Section */
                 <div>
                     <h3 className="text-3xl font-bold text-gray-800 mb-5 border-b pb-2">Step-by-Step Timeline</h3>
                     <div className="space-y-4">
@@ -843,27 +871,22 @@ const App = () => {
                     </div>
                 </div>
                 
-                {/* Ingredients Section (Feature C: Conversion) */}
+                /* Ingredients Section */
                 <div>
                     <h3 className="text-3xl font-bold text-gray-800 mb-5 border-b pb-2">Full Ingredient List</h3>
                     <ul className="list-disc list-inside space-y-2 text-lg text-gray-700 pl-4 bg-gray-50 p-4 rounded-lg">
-                        {ingredients.map((item, index) => {
-                            // Simple parsing to extract value and unit
-                            const match = item.match(/(\d+\.?\d*)\s*(\w+)/);
-                            const conversionText = match ? convertIngredient(parseFloat(match[1]), match[2]) : '';
-                            return (
-                                <li key={index} className="border-b border-gray-200 last:border-b-0 pb-2">
-                                    {item}
-                                    {conversionText && <span className="text-sm text-indigo-400 font-medium ml-2">{conversionText}</span>}
-                                </li>
-                            );
-                        })}
+                        {ingredients.map((item, index) => (
+                            <li key={index} className="border-b border-gray-200 last:border-b-0 pb-2">{item}</li>
+                        ))}
                     </ul>
                 </div>
+                
+                /* Unit Conversion Utility */
+                <UnitConverter ingredients={ingredients} />
 
-                {/* Instructions Section */}
+                /* Instructions Section */
                 <div>
-                    <h3 className="3xl font-bold text-gray-800 mb-5 border-b pb-2">Cooking Instructions</h3>
+                    <h3 className="text-3xl font-bold text-gray-800 mb-5 border-b pb-2">Cooking Instructions</h3>
                     <ol className="list-decimal list-inside space-y-4 text-gray-700 pl-4">
                         {instructions.map((step, index) => (
                             <li key={index} className="font-medium">
@@ -883,7 +906,7 @@ const App = () => {
         );
     };
 
-    // E. Favorites View (Feature E: Repetition Tracking)
+    // E. Favorites View
     const FavoritesView = () => (
         <div>
             <h2 className="text-3xl font-bold text-gray-800 mb-6 flex justify-between items-center">
@@ -902,12 +925,7 @@ const App = () => {
                             <div className="flex-1 pr-4">
                                 <p className="text-lg font-bold text-pink-700">{fav.recipeName}</p>
                                 <p className="text-gray-500 text-sm mt-1">
-                                    Saved: {new Date(fav.savedAt).toLocaleDateString()}
-                                    {fav.lastUsed && (
-                                        <span className="ml-2 font-medium text-xs text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                                            Last Used: {new Date(fav.lastUsed).toLocaleDateString()}
-                                        </span>
-                                    )}
+                                    Last Made: {fav.lastUsed ? new Date(fav.lastUsed).toLocaleDateString() : 'Never'}
                                 </p>
                             </div>
                             <div className="flex space-x-2">
@@ -934,7 +952,9 @@ const App = () => {
 
     // F. Main Render Switch
     let content;
-    if (!isAuthReady) {
+    const isDinnerPlanActive = ['review', 'timing', 'detail'].includes(view);
+
+    if (!isFirebaseInitialized || !isAuthReady) {
          content = (
             <div className="flex flex-col items-center justify-center py-20">
                 <svg className="animate-spin h-8 w-8 text-indigo-600 mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -942,6 +962,7 @@ const App = () => {
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
                 </svg>
                 <p className="text-gray-600 font-semibold">Connecting to Database...</p>
+                {error && <p className="text-red-500 mt-4 text-center p-2 border border-red-300 rounded-lg">{error}</p>}
             </div>
         );
     } else if (isLoading) {
@@ -1007,21 +1028,18 @@ const App = () => {
         }
     }
     
-    // F. Global Layout
-    
-    const isDinnerPlanActive = ['review', 'timing', 'detail'].includes(view);
-    
+    // G. Global Layout
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
             <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl p-6 sm:p-10">
                 <header className="text-center mb-10 border-b pb-4">
                     <h1 className="text-4xl font-extrabold text-indigo-700">
-                        My Family Dinners
+                        Dickerson Family Dinner Plans
                     </h1>
                     <p className="text-gray-500 mt-2">Plan, Shop, and Cook with Precision</p>
                 </header>
 
-                {/* Navigation and Content Switch */}
+                /* Navigation and Content Switch */
                 <div className="flex space-x-4 mb-8 border-b pb-4">
                     <button 
                         onClick={() => setView('review')}
@@ -1045,15 +1063,8 @@ const App = () => {
                     </button>
                 </div>
 
-                {/* Main Content Area */}
+                /* Main Content Area */
                 <div className="mt-8">
-                    {error && (
-                        <div className="p-4 mb-4 text-center bg-red-100 text-red-700 rounded-lg shadow-md">
-                            <p className="font-bold">Error:</p>
-                            <p>{error}</p>
-                        </div>
-                    )}
-                    
                     {content}
                 </div>
 
