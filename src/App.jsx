@@ -381,4 +381,100 @@ const App = () => {
 
     // F. Main Render Switch
     let content;
-    const isDinnerPlanActive
+    const isDinnerPlanActive = ['review', 'timing', 'detail'].includes(view);
+    const isLoadingView = !isFirebaseInitialized || !isAuthReady || isLoading;
+
+    if (isLoadingView) {
+        content = (
+            <div className="text-center py-20">
+                {/* --- DAISYUI: Loading spinner --- */}
+                <span className="loading loading-spinner loading-lg text-primary"></span>
+                <p className="mt-4 font-semibold">{isLoading ? 'Working on your request...' : 'Connecting to Database...'}</p>
+                {error && <div className="alert alert-error mt-4">{error}</div>}
+            </div>
+        );
+    } else {
+        switch (view) {
+            case 'planning':
+                content = (
+                    <div className="bg-base-200 p-6 rounded-box">
+                        <div className="form-control">
+                            <label className="label">
+                                <span className="label-text text-lg font-bold">Enter Family Preferences & Dietary Needs</span>
+                            </label>
+                            {/* --- DAISYUI: Textarea with border --- */}
+                            <textarea
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                rows="3"
+                                placeholder="e.g., 2 adults, 3 kids. Needs to be low-carb, no seafood, and prioritize chicken and vegetarian meals."
+                                className="textarea textarea-bordered h-24"
+                                disabled={isLoading}
+                            ></textarea>
+                        </div>
+                        <button
+                            onClick={() => processPlanGeneration(false)}
+                            disabled={!query.trim()}
+                            className="btn btn-primary w-full mt-4"
+                        >
+                            Generate Initial 7-Day Plan & Shopping List
+                        </button>
+                    </div>
+                );
+                break;
+            case 'review': content = planData ? <ReviewView /> : null; break;
+            case 'shopping': content = planData ? <ShoppingView /> : null; break;
+            case 'favorites': content = <FavoritesView />; break;
+            case 'timing': content = planData ? <TimingView /> : null; break;
+            case 'detail': content = detailedRecipe ? <DetailView /> : null; break;
+            default: content = ( <div className="text-center py-20 bg-base-200 rounded-box"> <p className="text-xl font-medium">Enter your family's preferences above and click "Generate Plan" to start!</p> </div> );
+        }
+    }
+    
+    // G. Global Layout
+    return (
+        // --- DAISYUI: Using theme background colors ---
+        <div className="min-h-screen bg-base-200 p-4 sm:p-8">
+            <div className="max-w-4xl mx-auto bg-base-100 rounded-box shadow-2xl p-6 sm:p-10">
+                <header className="text-center mb-10 border-b border-base-300 pb-4">
+                    <h1 className="text-4xl font-extrabold text-primary">
+                        Dickerson Family Dinner Plans
+                    </h1>
+                    <p className="opacity-70 mt-2">Plan, Shop, and Cook with Precision</p>
+                </header>
+
+                {/* --- DAISYUI: Button group using "join" component --- */}
+                <div className="flex justify-center mb-8">
+                    <div className="join">
+                        <button
+                            onClick={() => setView('review')}
+                            disabled={!planData}
+                            className={`join-item btn ${isDinnerPlanActive ? 'btn-primary' : ''}`}
+                        >
+                            Dinner Plan
+                        </button>
+                        <button
+                            onClick={() => setView('shopping')}
+                            disabled={!planData}
+                            className={`join-item btn ${view === 'shopping' ? 'btn-primary' : ''}`}
+                        >
+                            Shopping List
+                        </button>
+                        <button
+                            onClick={() => setView('favorites')}
+                            className={`join-item btn ${view === 'favorites' ? 'btn-primary' : ''}`}
+                        >
+                            Favorites
+                        </button>
+                    </div>
+                </div>
+
+                <div className="mt-8">
+                    {content}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default App;
