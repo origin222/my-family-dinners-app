@@ -1,11 +1,8 @@
+{
+  "rewrites": [
     {
-      "version": 2,
-      "installCommand": "npm install",
-      "builds": [
-        {
-          "src": "index.html",
-          "use": "@vercel/static-build",
-          "config": { "distDir": "dist" }
-        }
-      ]
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
+  ]
+}
