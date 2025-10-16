@@ -209,7 +209,7 @@ const App = () => {
                                 <span>Saved to Favorites</span>
                             </p>
                         )}
-                        <button onClick={handlePrint} className="btn btn-ghost btn-sm gap-2 btn-icon-fix">
+                        <button onClick={handlePrint} className="flex items-center gap-2 text-sm py-1 px-2 hover:bg-base-200 rounded-lg no-print">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.662 0 1.18.568 1.12 1.227l-.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m0 0h11.32z" /></svg>
                             <span>Print</span>
                         </button>
