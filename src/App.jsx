@@ -86,15 +86,144 @@ const App = () => {
         }
     }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, deleteFavorite]);
 
-    const retryFetch = useCallback(async (url, options, maxRetries = 5) => { /* ... same as before ... */ }, []);
+    const retryFetch = useCallback(async (url, options, maxRetries = 5) => { for (let i = 0; i < maxRetries; i++) { try { const response = await fetch(url, options); if (response.status !== 429 && response.status < 500) { return response; } if (i === maxRetries - 1) throw new Error(`API returned status ${response.status}`); const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } catch (error) { if (i === maxRetries - 1) throw error; const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } } }, []);
     
-    const processPlanGeneration = useCallback(async (isRegeneration = false) => { /* ... same as before ... */ }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch]);
+    const processPlanGeneration = useCallback(async (isRegeneration = false) => {
+        if (!db || !userId) { toast.error("Not connected to the database. Please refresh."); return; }
+        if (isLoading) return;
+        if (!query.trim() && !isRegeneration) { toast.error("Please enter your family's preferences first."); return; }
+        setIsLoading(true);
+        setError(null);
+        const oldPlan = planData;
+        let systemPrompt;
+        let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list.";
+        const macroInstruction = "For each meal, you MUST provide an estimated nutritional breakdown including 'calories', 'protein', 'carbs', and 'fats'.";
 
-    const generateRecipeDetail = useCallback(async () => { /* ... same as before ... */ }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
-    
-    useEffect(() => { /* ... same as before ... */ }, []);
-    useEffect(() => { /* ... same as before ... */ }, [db, userId, isAuthReady]);
-    useEffect(() => { /* ... same as before ... */ }, [db, userId, isAuthReady]);
+        if (isRegeneration && oldPlan) {
+            const mealsToUpdate = mealsToRegenerate.map(index => oldPlan.weeklyPlan[index].day).join(', ');
+            const unchangedMeals = oldPlan.weeklyPlan.filter((_, index) => !mealsToRegenerate.includes(index)).map(meal => `${meal.day}: ${meal.meal} (${meal.description})`).join('; ');
+            systemPrompt = `You are updating a meal plan. New meals must follow this constraint: ${regenerationConstraint || 'None'}. Generate NEW meals for: ${mealsToUpdate}. Keep these meals: ${unchangedMeals}. ${macroInstruction}`;
+            userPrompt = `Replace meals for ${mealsToUpdate}. Return the full 7-day plan and a new consolidated shopping list.`;
+            setRegenerationConstraint('');
+        } else {
+            systemPrompt = `You are a meal planner. Generate a 7-day dinner plan and shopping list based on: "${query.trim()}". ${macroInstruction}`;
+        }
+        try {
+            const payload = { contents: [{ parts: [{ text: userPrompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: PLAN_RESPONSE_SCHEMA } };
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
+            const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                console.error("Gemini API Error Body:", errorBody);
+                const errorMessage = errorBody?.error?.message || response.statusText;
+                throw new Error(errorMessage);
+            }
+            const result = await response.json();
+            const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonString) { throw new Error("AI response was empty."); }
+            const parsedPlan = JSON.parse(jsonString);
+            const mergedList = mergeShoppingLists(parsedPlan.shoppingList, oldPlan?.shoppingList);
+            const newPlanData = { ...parsedPlan, shoppingList: mergedList, initialQuery: query.trim() };
+            const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
+            await setDoc(docRef, newPlanData);
+            setView('review');
+        } catch (e) {
+            console.error("Plan Generation Error:", e);
+            toast.error(`Failed to generate plan: ${e.message}`);
+        } finally {
+            setIsLoading(false);
+            setMealsToRegenerate([]);
+        }
+    }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch]);
+
+    const generateRecipeDetail = useCallback(async () => {
+        if (!db || !userId) { toast.error("Not connected. Please refresh."); return; }
+        if (isLoading) return;
+        if (selectedMealIndex === null || !planData) { toast.error("Please select a meal first."); return; }
+        setIsLoading(true);
+        setError(null);
+        const meal = planData.weeklyPlan[selectedMealIndex];
+        const targetTime = convertToActualTime(dinnerTime, 0);
+        const detailQuery = `Generate a full recipe for "${meal.meal}" based on: "${meal.description}". The meal must be ready at ${targetTime}. Provide a timeline using 'minutesBefore' (e.g., 60, 45, 10).`;
+        const systemPrompt = "You are a chef. Provide precise recipe details and a reverse-engineered cooking timeline.";
+        try {
+            const payload = { contents: [{ parts: [{ text: detailQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: RECIPE_RESPONSE_SCHEMA } };
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
+            const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                const errorMessage = errorBody?.error?.message || response.statusText;
+                throw new Error(errorMessage);
+            }
+            const result = await response.json();
+            const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonString) { throw new Error("AI response was empty."); }
+            const parsedRecipe = JSON.parse(jsonString);
+            parsedRecipe.dinnerTime = dinnerTime;
+            setDetailedRecipe(parsedRecipe);
+            setView('detail');
+        } catch (e) {
+            console.error("Recipe Generation Error:", e);
+            toast.error(`Failed to generate recipe: ${e.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
+	useEffect(() => {
+        const configString = import.meta.env.VITE_FIREBASE_CONFIG;
+        if (!configString) {
+            setError("Firebase config is missing. Check Vercel environment variables.");
+            return;
+        };
+        try {
+            const firebaseConfig = JSON.parse(configString);
+            const app = initializeApp(firebaseConfig);
+            const authInstance = getAuth(app);
+            const dbInstance = getFirestore(app);
+            setDb(dbInstance);
+            setIsFirebaseInitialized(true);
+
+            const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+                if (user) { setUserId(user.uid); } 
+                else { await signInAnonymously(authInstance); setUserId(authInstance.currentUser?.uid || crypto.randomUUID()); }
+                setIsAuthReady(true);
+            });
+            return () => unsubscribe();
+        } catch (e) { console.error("Firebase Initialization Error:", e); setError(`Failed to initialize Firebase: ${e.message}`); }
+    }, []);
+
+    useEffect(() => {
+        if (!db || !userId || !isAuthReady) return;
+        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
+        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setPlanData(data);
+                setView(currentView => {
+                    if (!['shopping', 'timing', 'detail', 'favorites', 'public'].includes(currentView)) {
+                        return 'review';
+                    }
+                    return currentView;
+                });
+                if (!query) setQuery(data.initialQuery || '');
+            } else {
+                setPlanData(null);
+                setView('planning');
+                setDetailedRecipe(null);
+            }
+        }, (e) => { console.error("Firestore Snapshot Error:", e); setError("Could not connect to the database."); });
+        return () => unsubscribe();
+    }, [db, userId, isAuthReady]);
+
+    useEffect(() => {
+        if (!db || !userId || !isAuthReady) return;
+        const favoritesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME);
+        const unsubscribe = onSnapshot(favoritesCollectionRef, (snapshot) => {
+            const favoriteList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setFavorites(favoriteList);
+        }, (e) => { console.error("Favorites Snapshot Error:", e); setError("Could not load saved favorites."); });
+        return () => unsubscribe();
+    }, [db, userId, isAuthReady]);
     
     let content;
     const isConnecting = !isFirebaseInitialized || !isAuthReady;
@@ -106,10 +235,10 @@ const App = () => {
     } else {
         switch (view) {
             case 'planning': 
-                content = ( <div className="max-w-2xl mx-auto"> <div className="bg-base-200 p-6 rounded-box"> <div className="form-control"> <label className="label mb-2"> <span className="label-text text-lg font-bold">Family Preferences</span> </label> <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows="3" placeholder="e.g., Low-carb, no seafood..." className="textarea textarea-bordered h-24" disabled={isLoading}></textarea> </div> <button onClick={() => processPlanGeneration(false)} className="btn btn-primary w-full mt-6">Generate 7-Day Plan</button> </div> </div> ); 
+                content = ( <div className="max-w-2xl mx-auto"> <div className="bg-base-200 p-6 rounded-box"> <div className="form-control w-full"> <label className="label"> <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span> </label> <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows="3" placeholder="e.g., Low-carb, no seafood..." className="textarea textarea-bordered h-24 mt-2" /> </div> <button onClick={() => processPlanGeneration(false)} className="btn btn-primary w-full mt-6">Generate 7-Day Plan</button> </div> </div> ); 
                 break;
             case 'review': content = planData ? <ReviewView planData={planData} mealsToRegenerate={mealsToRegenerate} regenerationConstraint={regenerationConstraint} setRegenerationConstraint={setRegenerationConstraint} processPlanGeneration={processPlanGeneration} toggleMealSelection={toggleMealSelection} handleSelectMeal={handleSelectMeal} generateShareLink={generateShareLink} handleStartOver={handleStartOver} /> : null; break;
-            case 'shopping': content = planData ? <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenCategory} setView={setView} /> : null; break;
+            case 'shopping': content = planData ? <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} /> : null; break;
             case 'favorites': content = <FavoritesView favorites={favorites} deleteFavorite={deleteFavorite} loadFavorite={loadFavorite} setView={setView} />; break;
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
             case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} /> : null; break;
