@@ -353,6 +353,18 @@ const App = () => {
     const [regenerationConstraint, setRegenerationConstraint] = useState('');
     const [openShoppingCategory, setOpenShoppingCategory] = useState(null);
 
+    const updateShoppingList = useCallback(async (updatedList) => {
+        if (!db || !userId || !planData) return;
+        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
+        try {
+            await setDoc(docRef, { ...planData, shoppingList: updatedList });
+            toast.success('Shopping list updated!');
+        } catch (e) {
+            console.error("Firestore Update Error:", e);
+            toast.error('Failed to update shopping list.');
+        }
+    }, [db, userId, planData]);
+
     const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId, appId]);
     const handlePrint = useCallback(() => { window.print(); }, []);
     const handleCheckItem = useCallback((index) => { if (!planData) return; const newShoppingList = [...planData.shoppingList]; newShoppingList[index].isChecked = !newShoppingList[index].isChecked; updateShoppingList(newShoppingList); }, [planData, updateShoppingList]);
