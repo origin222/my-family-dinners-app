@@ -32,6 +32,7 @@ const SHARED_PLANS_COLLECTION_NAME = 'public/data/shared_plans';
 // --- JSON SCHEMAS ---
 const PLAN_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "weeklyPlan": { type: "ARRAY", items: { type: "OBJECT", properties: { "day": { "type": "STRING" }, "meal": { "type": "STRING" }, "description": { "type": "STRING" }, "calories": { "type": "STRING" }, "protein": { "type": "STRING" }, "carbs": { "type": "STRING" }, "fats": { "type": "STRING" } } } }, "shoppingList": { type: "ARRAY", items: { type: "OBJECT", properties: { "item": { "type": "STRING" }, "quantity": { "type": "STRING" }, "category": { "type": "STRING" }, "isChecked": { "type": "BOOLEAN" } } } } } };
 const RECIPE_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "recipeName": { "type": "STRING" }, "prepTimeMinutes": { "type": "NUMBER" }, "cookTimeMinutes": { "type": "NUMBER" }, "ingredients": { "type": "ARRAY", "items": { "type": "STRING" } }, "timeline": { type: "ARRAY", items: { "type": "OBJECT", "properties": { "minutesBefore": { "type": "NUMBER" }, "action": { "type": "STRING" } } } }, "instructions": { "type": "ARRAY", "items": { "type": "STRING" } } } };
+
 // --- MAIN APP COMPONENT ---
 const App = () => {
     const [db, setDb] = useState(null);
@@ -54,14 +55,25 @@ const App = () => {
     const updateShoppingList = useCallback(async (updatedList) => {
         if (!db || !userId || !planData) return;
         const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
-        try {
-            await updateDoc(docRef, { shoppingList: updatedList });
-        } catch (e) {
-            console.error("Firestore Update Error:", e);
-            toast.error("Could not update shopping list.");
-        }
+        try { await updateDoc(docRef, { shoppingList: updatedList }); } 
+        catch (e) { console.error("Firestore Update Error:", e); toast.error("Could not update shopping list."); }
     }, [db, userId, planData]);
 
+    const handleAddItem = useCallback((newItem) => {
+        if (!planData) return;
+        const updatedList = [...planData.shoppingList, newItem];
+        updateShoppingList(updatedList);
+        toast.success(`"${newItem.item}" added to shopping list!`);
+    }, [planData, updateShoppingList]);
+
+    const handleDeleteItem = useCallback((indexToDelete) => {
+        if (!planData) return;
+        const itemToDelete = planData.shoppingList[indexToDelete];
+        const updatedList = planData.shoppingList.filter((_, index) => index !== indexToDelete);
+        updateShoppingList(updatedList);
+        toast.success(`"${itemToDelete.item}" removed.`);
+    }, [planData, updateShoppingList]);
+    
     const handleSelectMeal = useCallback((index) => { setSelectedMealIndex(index); setDetailedRecipe(null); setView('timing'); }, []);
     const toggleMealSelection = useCallback((index) => { setMealsToRegenerate(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); }, []);
     const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId]);
@@ -169,7 +181,8 @@ const App = () => {
             setIsLoading(false);
         }
     }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
-	useEffect(() => {
+
+    useEffect(() => {
         const configString = import.meta.env.VITE_FIREBASE_CONFIG;
         if (!configString) {
             setError("Firebase config is missing. Check Vercel environment variables.");
@@ -238,7 +251,7 @@ const App = () => {
                 content = ( <div className="max-w-2xl mx-auto"> <div className="bg-base-200 p-6 rounded-box"> <div className="form-control w-full"> <label className="label"> <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span> </label> <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows="3" placeholder="e.g., Low-carb, no seafood..." className="textarea textarea-bordered h-24 mt-2" /> </div> <button onClick={() => processPlanGeneration(false)} className="btn btn-primary w-full mt-6">Generate 7-Day Plan</button> </div> </div> ); 
                 break;
             case 'review': content = planData ? <ReviewView planData={planData} mealsToRegenerate={mealsToRegenerate} regenerationConstraint={regenerationConstraint} setRegenerationConstraint={setRegenerationConstraint} processPlanGeneration={processPlanGeneration} toggleMealSelection={toggleMealSelection} handleSelectMeal={handleSelectMeal} generateShareLink={generateShareLink} handleStartOver={handleStartOver} /> : null; break;
-            case 'shopping': content = planData ? <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} /> : null; break;
+            case 'shopping': content = planData ? <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} /> : null; break;
             case 'favorites': content = <FavoritesView favorites={favorites} deleteFavorite={deleteFavorite} loadFavorite={loadFavorite} setView={setView} />; break;
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
             case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} /> : null; break;
