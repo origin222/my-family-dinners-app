@@ -152,11 +152,10 @@ const App = () => {
         switch (view) {
             case 'planning': 
                 content = ( 
-                    // --- UI TWEAK: Constrain width and center the planning form ---
                     <div className="max-w-2xl mx-auto">
                         <div className="bg-base-200 p-6 rounded-box"> 
                             <div className="form-control"> 
-                                <label className="label"> 
+                                <label className="label mb-2"> 
                                     <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span> 
                                 </label> 
                                 <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows="3" placeholder="e.g., Low-carb, no seafood, prioritize chicken..." className="textarea textarea-bordered h-24" disabled={isLoading}></textarea> 
