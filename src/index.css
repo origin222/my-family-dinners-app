@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* --- FIX: Custom class to force icon alignment in buttons --- */
+.btn-icon-fix {
+    display: inline-flex !important;
+    align-items: center !important;
+}
+
 /* --- PRINTER-FRIENDLY STYLES --- */
 @media print {
     /* Hide all non-essential UI elements */
@@ -33,7 +39,7 @@
         background-color: white !important;
     }
 
-    /* --- FIX: Keep sections from splitting across pages --- */
+    /* Keep sections from splitting across pages */
     .printable-section {
         page-break-inside: avoid !important;
         padding-top: 1rem;
