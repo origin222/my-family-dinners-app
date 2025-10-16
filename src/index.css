@@ -24,7 +24,7 @@
         top: 0;
         width: 100%;
         padding: 1rem;
-        color: black; /* Ensure all text is black */
+        color: black;
     }
 
     /* Force all text and backgrounds to a simple format */
@@ -33,10 +33,10 @@
         background-color: white !important;
     }
 
-    /* Prevent sections from splitting across pages */
-    h3, ul, ol {
-        page-break-after: auto;
-        page-break-inside: avoid;
+    /* --- FIX: Keep sections from splitting across pages --- */
+    .printable-section {
+        page-break-inside: avoid !important;
+        padding-top: 1rem;
     }
 
     /* Fix the DaisyUI "steps" component for printing */
@@ -44,7 +44,7 @@
         color: black !important;
     }
     .steps .step:before, .steps .step:after {
-        background-color: #ccc !important; /* Use a light grey for lines */
+        background-color: #ccc !important;
     }
     .steps .step-primary:after {
         background-color: black !important;
