@@ -121,7 +121,6 @@ const App = () => {
         let systemPrompt;
         let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list.";
 
-        // --- PROMPT UPDATE ---
         const macroInstruction = "For each meal, you MUST provide an estimated nutritional breakdown including 'calories', 'protein', 'carbs', and 'fats'.";
 
         if (isRegeneration && oldPlan) {
@@ -195,7 +194,7 @@ const App = () => {
                                 <p className="text-sm opacity-70 flex-grow">{meal.description}</p>
                                 
                                 {meal.calories && (
-                                    <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                                    <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                                         <div className="badge badge-outline">{meal.calories}</div>
                                         <div className="badge badge-outline badge-primary">{meal.protein} protein</div>
                                         <div className="badge badge-outline badge-secondary">{meal.carbs} carbs</div>
