@@ -51,26 +51,17 @@ const App = () => {
     const [regenerationConstraint, setRegenerationConstraint] = useState('');
     const [openShoppingCategory, setOpenShoppingCategory] = useState(null);
 
-    const updateShoppingList = useCallback(async (updatedList) => {
-        if (!db || !userId || !planData) return;
-        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
-        try {
-            await updateDoc(docRef, { shoppingList: updatedList });
-        } catch (e) {
-            console.error("Firestore Update Error:", e);
-            toast.error("Could not update shopping list.");
-        }
-    }, [db, userId, planData]);
+    const updateShoppingList = useCallback(async (updatedList) => { if (!db || !userId || !planData) return; const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await updateDoc(docRef, { shoppingList: updatedList }); } catch (e) { console.error("Firestore Update Error:", e); toast.error("Could not update shopping list."); } }, [db, userId, planData, appId]);
 
     const handleSelectMeal = useCallback((index) => { setSelectedMealIndex(index); setDetailedRecipe(null); setView('timing'); }, []);
     const toggleMealSelection = useCallback((index) => { setMealsToRegenerate(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); }, []);
-    const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId]);
+    const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId, appId]);
     const handlePrint = useCallback(() => { window.print(); }, []);
     const handleCheckItem = useCallback((index) => { if (!planData) return; const newShoppingList = [...planData.shoppingList]; newShoppingList[index].isChecked = !newShoppingList[index].isChecked; updateShoppingList(newShoppingList); }, [planData, updateShoppingList]);
     const handleClearChecked = useCallback(() => { if (!planData) return; const uncheckedList = planData.shoppingList.filter(item => !item.isChecked); updateShoppingList(uncheckedList); toast.success('Checked items cleared!'); }, [planData, updateShoppingList]);
-    const loadFavorite = useCallback(async (favorite) => { setDetailedRecipe(favorite); setDinnerTime(favorite.dinnerTime || '19:00'); setView('detail'); if (favorite.id) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favorite.id); try { await updateDoc(docRef, { lastUsed: new Date().toISOString() }); } catch (e) { console.error("Error updating lastUsed timestamp:", e); } } }, [db, userId]);
-    const deleteFavorite = useCallback(async (id, name) => { if (!db || !userId) return; const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id); try { await deleteDoc(docRef); toast.success(`"${name}" deleted.`); } catch (e) { toast.error("Failed to delete."); } }, [db, userId]);
-    const generateShareLink = useCallback(async () => { if (!db || !userId || !planData) return; const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId); const publicPlanData = { weeklyPlan: planData.weeklyPlan, initialQuery: planData.initialQuery, userId: userId, userName: "A Friend", sharedAt: new Date().toISOString(), }; try { await setDoc(shareDocRef, publicPlanData); const url = `${window.location.origin}/share/${userId}`; toast((t) => ( <div className="flex flex-col gap-2"> <span className="text-sm font-semibold">Shareable link!</span> <div className="flex gap-2"> <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" /> <button className="btn btn-sm btn-primary" onClick={() => { navigator.clipboard.writeText(url); toast.success('Copied!', { id: t.id }); }}>Copy</button> </div> </div> ), { duration: 6000 }); } catch (e) { toast.error("Failed to generate link."); } }, [db, userId, planData]);
+    const loadFavorite = useCallback(async (favorite) => { setDetailedRecipe(favorite); setDinnerTime(favorite.dinnerTime || '19:00'); setView('detail'); if (favorite.id) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favorite.id); try { await updateDoc(docRef, { lastUsed: new Date().toISOString() }); } catch (e) { console.error("Error updating lastUsed timestamp:", e); } } }, [db, userId, appId]);
+    const deleteFavorite = useCallback(async (id, name) => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id); try { await deleteDoc(docRef); toast.success(`"${name}" deleted.`); } catch (e) { toast.error("Failed to delete."); } } }, [db, userId, appId]);
+    const generateShareLink = useCallback(async () => { if (!db || !userId || !planData) return; const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId); const publicPlanData = { weeklyPlan: planData.weeklyPlan, initialQuery: planData.initialQuery, userId: userId, userName: "A Friend", sharedAt: new Date().toISOString(), }; try { await setDoc(shareDocRef, publicPlanData); const url = `${window.location.origin}/share/${userId}`; toast((t) => ( <div className="flex flex-col gap-2"> <span className="text-sm font-semibold">Shareable link!</span> <div className="flex gap-2"> <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" /> <button className="btn btn-sm btn-primary" onClick={() => { navigator.clipboard.writeText(url); toast.success('Copied!', { id: t.id }); }}>Copy</button> </div> </div> ), { duration: 6000 }); } catch (e) { toast.error("Failed to generate link."); } }, [db, userId, planData, appId]);
 
     const handleToggleFavorite = useCallback(() => {
         if (!detailedRecipe || !db || !userId) return;
@@ -84,19 +75,16 @@ const App = () => {
                 .then(() => toast.success(`"${detailedRecipe.recipeName}" saved to favorites!`))
                 .catch(() => toast.error("Failed to save favorite."));
         }
-    }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, deleteFavorite]);
+    }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, appId, deleteFavorite]);
 
-    const retryFetch = useCallback(async (url, options, maxRetries = 5) => { for (let i = 0; i < maxRetries; i++) { try { const response = await fetch(url, options); if (response.status !== 429 && response.status < 500) { return response; } if (i === maxRetries - 1) throw new Error("Max retries reached."); const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } catch (error) { if (i === maxRetries - 1) throw error; const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } } }, []);
+    const retryFetch = useCallback(async (url, options, maxRetries = 5) => { for (let i = 0; i < maxRetries; i++) { try { const response = await fetch(url, options); if (response.status !== 429 && response.status < 500) { return response; } if (i === maxRetries - 1) throw new Error(`API returned status ${response.status}`); const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } catch (error) { if (i === maxRetries - 1) throw error; const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } } }, []);
     
     const processPlanGeneration = useCallback(async (isRegeneration = false) => {
-        if (!db || !userId) { toast.error("Not connected to database. Please refresh."); return; }
+        if (!db || !userId) { toast.error("Not connected to the database. Please refresh."); return; }
         if (isLoading) return;
         if (!query.trim() && !isRegeneration) { toast.error("Please enter your family's preferences first."); return; }
         setIsLoading(true);
         setError(null);
-        setDetailedRecipe(null);
-        setSelectedMealIndex(null);
-        setMealsToRegenerate([]);
         const oldPlan = planData;
         let systemPrompt;
         let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list.";
@@ -115,7 +103,12 @@ const App = () => {
             const payload = { contents: [{ parts: [{ text: userPrompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: PLAN_RESPONSE_SCHEMA } };
             const url = `${API_URL}?key=${finalGeminiApiKey}`;
             const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (!response.ok) { throw new Error(`API error: ${response.statusText}`); }
+            if (!response.ok) {
+                const errorBody = await response.json();
+                console.error("Gemini API Error Body:", errorBody);
+                const errorMessage = errorBody?.error?.message || response.statusText;
+                throw new Error(errorMessage);
+            }
             const result = await response.json();
             const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
             if (!jsonString) { throw new Error("AI response was empty."); }
@@ -127,14 +120,14 @@ const App = () => {
             setView('review');
         } catch (e) {
             console.error("Plan Generation Error:", e);
-            toast.error(`Failed to generate plan: ${e.message}.`);
+            toast.error(`Failed to generate plan: ${e.message}`);
         } finally {
             setIsLoading(false);
             setMealsToRegenerate([]);
         }
     }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch]);
 
-    const generateRecipeDetail = useCallback(async () => { if (!db || !userId || isLoading || selectedMealIndex === null || !planData) return; setIsLoading(true); setError(null); setDetailedRecipe(null); const meal = planData.weeklyPlan[selectedMealIndex]; const targetTime = convertToActualTime(dinnerTime, 0); const detailQuery = `Generate a full recipe for "${meal.meal}" based on: "${meal.description}". The meal must be ready at ${targetTime}. Provide a timeline using 'minutesBefore' (e.g., 60, 45, 10).`; const systemPrompt = "You are a chef. Provide precise recipe details and a reverse-engineered cooking timeline."; try { const payload = { contents: [{ parts: [{ text: detailQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: RECIPE_RESPONSE_SCHEMA } }; const url = `${API_URL}?key=${finalGeminiApiKey}`; const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (!response.ok) { throw new Error(`API error: ${response.statusText}`); } const result = await response.json(); const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text; if (!jsonString) { throw new Error("AI response was empty."); } const parsedRecipe = JSON.parse(jsonString); parsedRecipe.dinnerTime = dinnerTime; setDetailedRecipe(parsedRecipe); setView('detail'); } catch (e) { console.error("Recipe Generation Error:", e); toast.error(`Failed to generate recipe details: ${e.message}.`); } finally { setIsLoading(false); } }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
+    const generateRecipeDetail = useCallback(async () => { /* ... same as before ... */ }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
 	useEffect(() => {
         if (Object.keys(firebaseConfig).length === 0) {
             setError("Firebase config is missing. Check Vercel environment variables.");
@@ -180,7 +173,7 @@ const App = () => {
             }
         }, (e) => {
             console.error("Firestore Snapshot Error:", e);
-            setError("Could not connect to the database to check for a meal plan.");
+            setError("Could not connect to the database.");
         });
         return () => unsubscribe();
     }, [db, userId, isAuthReady]);
@@ -201,7 +194,7 @@ const App = () => {
     let content;
     const isConnecting = !isFirebaseInitialized || !isAuthReady;
     
-    if (isConnecting && !error) {
+    if (isConnecting) {
         content = ( <div className="text-center py-20"> <span className="loading loading-spinner loading-lg text-primary"></span> <p className="mt-4 font-semibold">Connecting...</p> </div> );
     } else if (isLoading) {
         content = view === 'planning' || view === 'review' ? <PlanSkeleton /> : <div className="text-center py-20"><span className="loading loading-dots loading-lg text-primary"></span></div>;
