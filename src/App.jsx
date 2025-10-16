@@ -354,16 +354,15 @@ const App = () => {
     const [openShoppingCategory, setOpenShoppingCategory] = useState(null);
 
     const updateShoppingList = useCallback(async (newShoppingList) => {
-        if (!db || !userId || !planData) return;
-        const updatedPlanData = { ...planData, shoppingList: newShoppingList };
-        setPlanData(updatedPlanData);
+        if (!db || !userId) return;
+        setPlanData(prev => prev ? { ...prev, shoppingList: newShoppingList } : null);
         const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
         try {
             await updateDoc(docRef, { shoppingList: newShoppingList });
         } catch (e) {
             console.error("Error updating shopping list:", e);
         }
-    }, [db, userId, planData, appId]);
+    }, [db, userId, appId]);
 
     const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId, appId]);
     const handlePrint = useCallback(() => { window.print(); }, []);
