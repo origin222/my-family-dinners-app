@@ -204,21 +204,7 @@ const App = () => {
         try {
             await setDoc(shareDocRef, publicPlanData);
             const url = `${window.location.origin}/share/${userId}`;
-            
-            // Custom toast with a copy button
-            toast((t) => (
-                <div className="flex flex-col gap-2">
-                    <span className="text-sm font-semibold">Shareable link generated!</span>
-                    <div className="flex gap-2">
-                        <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" />
-                        <button className="btn btn-sm btn-primary" onClick={() => {
-                            navigator.clipboard.writeText(url);
-                            toast.success('Copied to clipboard!', { id: t.id });
-                        }}>Copy</button>
-                    </div>
-                </div>
-            ), { duration: 6000 });
-
+            toast((t) => ( <div className="flex flex-col gap-2"> <span className="text-sm font-semibold">Shareable link generated!</span> <div className="flex gap-2"> <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" /> <button className="btn btn-sm btn-primary" onClick={() => { navigator.clipboard.writeText(url); toast.success('Copied to clipboard!', { id: t.id }); }}>Copy</button> </div> </div> ), { duration: 6000 });
         } catch (e) {
             console.error("Error sharing plan:", e);
             toast.error("Failed to generate share link.");
@@ -228,7 +214,9 @@ const App = () => {
     const convertIngredient = (ingredientString, targetUnit) => { if (!ingredientString) return { original: 'N/A', converted: 'N/A' }; const parts = ingredientString.toLowerCase().match(/(\d+\.?\d*)\s*([a-z]+)/); if (!parts) return { original: ingredientString, converted: ingredientString }; const value = parseFloat(parts[1]); const unit = parts[2].trim(); if (targetUnit === 'metric') { const conversion = UNIT_CONVERSIONS[unit]; if (conversion) { const newValue = value * conversion.factor; return { original: `${value} ${unit}`, converted: `${newValue.toFixed(1)} ${conversion.unit}` }; } } return { original: ingredientString, converted: "N/A" }; };
 
     const ThemeToggle = () => { const [theme, setTheme] = useState(localStorage.getItem('theme') ? localStorage.getItem('theme') : 'cupcake'); useEffect(() => { document.querySelector('html').setAttribute('data-theme', theme); localStorage.setItem('theme', theme); }, [theme]); const handleToggle = (e) => { setTheme(e.target.checked ? 'dark' : 'cupcake'); }; return ( <div className="flex items-center gap-2"> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg> <input type="checkbox" onChange={handleToggle} checked={theme === 'dark'} className="toggle theme-controller" /> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg> </div> ); };
+    
     const PlanSkeleton = () => ( <div> <h2 className="text-3xl font-bold mb-6">Generating Your Plan...</h2> <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"> {[...Array(6)].map((_, i) => ( <div key={i} className="flex flex-col gap-4 w-full"> <div className="skeleton h-36 w-full"></div> <div className="skeleton h-4 w-28"></div> <div className="skeleton h-4 w-full"></div> </div> ))} </div> </div> );
+    
     const UnitConverter = ({ ingredients }) => { const [conversionType, setConversionType] = useState('metric'); return ( <div className="p-4 bg-base-200 rounded-box"> <div className="flex justify-between items-center mb-4 border-b pb-2"> <h4 className="text-xl font-bold">Unit Converter</h4> <select value={conversionType} onChange={(e) => setConversionType(e.target.value)} className="select select-bordered select-sm"> <option value="metric">To Metric (g/kg/ml)</option> <option value="imperial">To Imperial (lb/oz/cup)</option> </select> </div> <ul className="space-y-1 text-sm"> {ingredients.map((item, index) => { const conversion = convertIngredient(item, 'metric'); return ( <li key={index} className="flex justify-between border-b border-base-300 last:border-b-0 py-1"> <span>{item}</span> <span className="font-semibold text-accent">{conversion.converted}</span> </li> ); })} </ul> </div> ); };
     const ShoppingView = () => { const groupedList = useMemo(() => { const list = {}; if (planData?.shoppingList) { planData.shoppingList.forEach(item => { const category = item.category || 'Uncategorized'; if (!list[category]) list[category] = []; list[category].push(item); }); } return list; }, [planData?.shoppingList]); return ( <div> <div className="flex justify-between items-center mb-6"> <h2 className="text-3xl font-bold">Grocery Shopping List</h2> <button onClick={handleClearChecked} disabled={planData?.shoppingList?.filter(i => i.isChecked).length === 0} className="btn btn-error btn-sm">Clear Checked</button> </div> <div className="space-y-2"> {Object.keys(groupedList).sort().map(category => ( <div key={category} className="collapse collapse-arrow bg-base-200"> <input type="radio" name="shopping-accordion" defaultChecked={Object.keys(groupedList).sort()[0] === category} /> <div className="collapse-title text-xl font-medium">{category} ({groupedList[category].length})</div> <div className="collapse-content"> {groupedList[category].map((item) => { const globalIndex = planData.shoppingList.findIndex(i => i.item === item.item && i.quantity === item.quantity && i.category === item.category); return ( <div key={globalIndex} className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${item.isChecked ? 'opacity-50 line-through' : 'hover:bg-base-100'}`} onClick={() => handleCheckItem(globalIndex)}> <div className="flex items-center gap-4"> <input type="checkbox" checked={item.isChecked} readOnly className="checkbox checkbox-primary" /> <div> <span className="font-semibold">{item.item}</span> <span className="text-xs opacity-70 block">{item.quantity}</span> </div> </div> </div> ); })} </div> </div> ))} </div> {planData?.shoppingList?.length === 0 && ( <p className="text-center mt-10 p-6 bg-base-200 rounded-box">Your shopping list is empty!</p> )} </div> ); };
     
@@ -240,7 +228,24 @@ const App = () => {
         if (!detailedRecipe) return <p className="text-center text-error">Error loading recipe.</p>;
         const { recipeName, prepTimeMinutes, cookTimeMinutes, ingredients, timeline, instructions } = detailedRecipe;
         const targetTimeDisplay = convertToActualTime(dinnerTime, 0);
-        const isFavorite = favorites.some(fav => fav.recipeName === recipeName);
+
+        const favoriteInstance = favorites.find(fav => fav.recipeName === recipeName);
+        const isFavorite = !!favoriteInstance;
+
+        const handleToggleFavorite = () => {
+            if (isFavorite) {
+                // Delete logic
+                if (!db || !userId || !favoriteInstance.id) return;
+                const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favoriteInstance.id);
+                deleteDoc(docRef)
+                    .then(() => toast.success(`"${recipeName}" removed from favorites.`))
+                    .catch((e) => toast.error("Failed to remove favorite."));
+            } else {
+                // Save logic
+                saveFavorite();
+            }
+        };
+
         return (
             <div id="printable-recipe">
                 <header className="text-center border-b border-base-300 pb-4">
@@ -249,19 +254,16 @@ const App = () => {
                     <p className="opacity-70 mt-1">Prep: {prepTimeMinutes} mins | Cook: {cookTimeMinutes} mins</p>
                     
                     <div className="flex justify-center items-center gap-4 mt-4 no-print">
-                        {!isFavorite && (
-                            <button onClick={saveFavorite} className="btn btn-secondary btn-sm gap-2 btn-icon-fix">
+                        <button onClick={handleToggleFavorite} className={`btn btn-sm gap-2 ${isFavorite ? 'btn-error' : 'btn-secondary'}`}>
+                            {isFavorite ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
+                            ) : (
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" /></svg>
-                                <span>Save Favorite</span>
-                            </button>
-                        )}
-                        {isFavorite && (
-                            <p className="text-sm text-secondary font-medium flex items-center justify-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" /></svg>
-                                <span>Saved to Favorites</span>
-                            </p>
-                        )}
-                        <button onClick={handlePrint} className="inline-flex items-center gap-2 text-sm h-8 px-3 rounded-lg hover:bg-base-200 transition-colors no-print">
+                            )}
+                            <span>{isFavorite ? 'Remove Favorite' : 'Save Favorite'}</span>
+                        </button>
+
+                        <button onClick={handlePrint} className="inline-flex items-center justify-center gap-2 text-sm h-8 px-3 rounded-lg hover:bg-base-200 transition-colors no-print">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03-.48.062-.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.662 0 1.18.568 1.12 1.227l-.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m0 0h11.32z" /></svg>
                             <span>Print</span>
                         </button>
