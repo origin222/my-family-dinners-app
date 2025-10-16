@@ -187,7 +187,7 @@ const App = () => {
                 </header>
 
                 {planData && (
-                    <div className="flex justify-center gap-6 mb-8">
+                    <div className="flex justify-center gap-8 mb-8">
                         <button onClick={() => setView('review')} disabled={!planData} className={`btn ${['review', 'timing', 'detail'].includes(view) ? 'btn-primary' : ''}`}>Dinner Plan</button>
                         <button onClick={() => setView('shopping')} disabled={!planData} className={`btn ${view === 'shopping' ? 'btn-primary' : ''}`}>Shopping List</button>
                         <button onClick={() => setView('favorites')} className={`btn ${view === 'favorites' ? 'btn-primary' : ''}`}>Favorites</button>
