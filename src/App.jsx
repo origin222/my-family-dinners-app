@@ -225,7 +225,7 @@ const App = () => {
     let content;
     const isConnecting = !isFirebaseInitialized || !isAuthReady;
     
-    if (isConnecting && !error) {
+    if (isConnecting) {
         content = ( <div className="text-center py-20"> <span className="loading loading-spinner loading-lg text-primary"></span> <p className="mt-4 font-semibold">Connecting...</p> </div> );
     } else if (isLoading) {
         content = view === 'planning' || view === 'review' ? <PlanSkeleton /> : <div className="text-center py-20"><span className="loading loading-dots loading-lg text-primary"></span></div>;
@@ -235,18 +235,18 @@ const App = () => {
                 content = (
                     <div className="max-w-2xl mx-auto">
                         <div className="bg-base-200 p-6 rounded-box">
-                            <label className="form-control w-full">
-                                <div className="label">
+                            <div className="form-control w-full">
+                                <label className="label">
                                     <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span>
-                                </div>
+                                </label>
                                 <textarea
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     rows="3"
                                     placeholder="e.g., Low-carb, no seafood, prioritize chicken..."
-                                    className="textarea textarea-bordered h-24"
+                                    className="textarea textarea-bordered h-24 mt-2"
                                 />
-                            </label>
+                            </div>
                             <button onClick={() => processPlanGeneration(false)} className="btn btn-primary w-full mt-6">Generate 7-Day Plan</button>
                         </div>
                     </div>
