@@ -85,7 +85,7 @@ const UNIT_CONVERSIONS = { 'lb': { unit: 'kg', factor: 0.453592 }, 'oz': { unit:
 
 // --- APP COMPONENT ---
 const App = () => {
-    // --- STATE HOOKS (UNCHANGED) ---
+    // --- STATE HOOKS ---
     const [db, setDb] = useState(null);
     const [userId, setUserId] = useState(null);
     const [isAuthReady, setIsAuthReady] = useState(false);
@@ -101,6 +101,7 @@ const App = () => {
     const [error, setError] = useState(null);
     const [favorites, setFavorites] = useState([]);
     const [regenerationConstraint, setRegenerationConstraint] = useState('');
+    const [openShoppingCategory, setOpenShoppingCategory] = useState(null);
 
     // --- HANDLERS AND CORE LOGIC ---
     const handleSelectMeal = useCallback((index) => { setSelectedMealIndex(index); setDetailedRecipe(null); setView('timing'); }, []);
@@ -218,7 +219,61 @@ const App = () => {
     const PlanSkeleton = () => ( <div> <h2 className="text-3xl font-bold mb-6">Generating Your Plan...</h2> <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"> {[...Array(6)].map((_, i) => ( <div key={i} className="flex flex-col gap-4 w-full"> <div className="skeleton h-36 w-full"></div> <div className="skeleton h-4 w-28"></div> <div className="skeleton h-4 w-full"></div> </div> ))} </div> </div> );
     
     const UnitConverter = ({ ingredients }) => { const [conversionType, setConversionType] = useState('metric'); return ( <div className="p-4 bg-base-200 rounded-box"> <div className="flex justify-between items-center mb-4 border-b pb-2"> <h4 className="text-xl font-bold">Unit Converter</h4> <select value={conversionType} onChange={(e) => setConversionType(e.target.value)} className="select select-bordered select-sm"> <option value="metric">To Metric (g/kg/ml)</option> <option value="imperial">To Imperial (lb/oz/cup)</option> </select> </div> <ul className="space-y-1 text-sm"> {ingredients.map((item, index) => { const conversion = convertIngredient(item, 'metric'); return ( <li key={index} className="flex justify-between border-b border-base-300 last:border-b-0 py-1"> <span>{item}</span> <span className="font-semibold text-accent">{conversion.converted}</span> </li> ); })} </ul> </div> ); };
-    const ShoppingView = () => { const groupedList = useMemo(() => { const list = {}; if (planData?.shoppingList) { planData.shoppingList.forEach(item => { const category = item.category || 'Uncategorized'; if (!list[category]) list[category] = []; list[category].push(item); }); } return list; }, [planData?.shoppingList]); return ( <div> <div className="flex justify-between items-center mb-6"> <h2 className="text-3xl font-bold">Grocery Shopping List</h2> <button onClick={handleClearChecked} disabled={planData?.shoppingList?.filter(i => i.isChecked).length === 0} className="btn btn-error btn-sm">Clear Checked</button> </div> <div className="space-y-2"> {Object.keys(groupedList).sort().map(category => ( <div key={category} className="collapse collapse-arrow bg-base-200"> <input type="radio" name="shopping-accordion" defaultChecked={Object.keys(groupedList).sort()[0] === category} /> <div className="collapse-title text-xl font-medium">{category} ({groupedList[category].length})</div> <div className="collapse-content"> {groupedList[category].map((item) => { const globalIndex = planData.shoppingList.findIndex(i => i.item === item.item && i.quantity === item.quantity && i.category === item.category); return ( <div key={globalIndex} className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${item.isChecked ? 'opacity-50 line-through' : 'hover:bg-base-100'}`} onClick={() => handleCheckItem(globalIndex)}> <div className="flex items-center gap-4"> <input type="checkbox" checked={item.isChecked} readOnly className="checkbox checkbox-primary" /> <div> <span className="font-semibold">{item.item}</span> <span className="text-xs opacity-70 block">{item.quantity}</span> </div> </div> </div> ); })} </div> </div> ))} </div> {planData?.shoppingList?.length === 0 && ( <p className="text-center mt-10 p-6 bg-base-200 rounded-box">Your shopping list is empty!</p> )} </div> ); };
+    
+    const ShoppingView = ({ openCategory, setOpenCategory }) => {
+        const groupedList = useMemo(() => {
+            const list = {};
+            if (planData?.shoppingList) {
+                planData.shoppingList.forEach(item => {
+                    const category = item.category || 'Uncategorized';
+                    if (!list[category]) list[category] = [];
+                    list[category].push(item);
+                });
+            }
+            return list;
+        }, [planData?.shoppingList]);
+
+        useEffect(() => {
+            const categories = Object.keys(groupedList).sort();
+            if (!openCategory && categories.length > 0) {
+                setOpenCategory(categories[0]);
+            }
+        }, [groupedList, openCategory, setOpenCategory]);
+
+        return (
+            <div>
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-3xl font-bold">Grocery Shopping List</h2>
+                    <button onClick={handleClearChecked} disabled={planData?.shoppingList?.filter(i => i.isChecked).length === 0} className="btn btn-error btn-sm">Clear Checked</button>
+                </div>
+                <div className="space-y-2">
+                    {Object.keys(groupedList).sort().map(category => (
+                        <div key={category} className="collapse collapse-arrow bg-base-200">
+                            <input type="radio" name="shopping-accordion" checked={openCategory === category} onChange={() => setOpenCategory(category)} />
+                            <div className="collapse-title text-xl font-medium">{category} ({groupedList[category].length})</div>
+                            <div className="collapse-content">
+                                {groupedList[category].map((item) => {
+                                    const globalIndex = planData.shoppingList.findIndex(i => i.item === item.item && i.quantity === item.quantity && i.category === item.category);
+                                    return (
+                                        <div key={globalIndex} className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition hover:bg-base-100`} onClick={() => handleCheckItem(globalIndex)}>
+                                            <div className="flex items-center gap-4">
+                                                <input type="checkbox" checked={item.isChecked} readOnly className="checkbox checkbox-primary" />
+                                                <div className={`${item.isChecked ? 'opacity-50 line-through' : ''}`}>
+                                                    <span className="font-semibold">{item.item}</span>
+                                                    <span className="text-xs opacity-70 block">{item.quantity}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                {planData?.shoppingList?.length === 0 && ( <p className="text-center mt-10 p-6 bg-base-200 rounded-box">Your shopping list is empty!</p> )}
+            </div>
+        );
+    };
     
     const ReviewView = () => ( <div> <h2 className="text-3xl font-bold mb-6">Review & Select Meals</h2> <div className="flex flex-col sm:flex-row gap-4 mb-6"> {mealsToRegenerate.length > 0 && ( <input type="text" placeholder="e.g., Use leftover chicken..." value={regenerationConstraint} onChange={(e) => setRegenerationConstraint(e.target.value)} className="input input-bordered w-full" /> )} <button onClick={() => processPlanGeneration(true)} disabled={mealsToRegenerate.length === 0} className="btn btn-accent">Regenerate {mealsToRegenerate.length || ''} Meal(s)</button> </div> <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"> {planData.weeklyPlan.map((meal, index) => { const isSelected = mealsToRegenerate.includes(index); return ( <div key={index} className={`card bg-base-100 shadow-xl transition-all duration-300 ${isSelected ? 'border-2 border-accent' : ''}`}> <div className="card-body"> <h3 className="card-title text-primary">{meal.day}</h3> <p className="font-semibold text-lg">{meal.meal}</p> <p className="text-sm opacity-70 flex-grow">{meal.description}</p> {meal.calories && ( <div className="mt-4 grid grid-cols-2 gap-2 text-xs"> <div className="badge badge-outline">{meal.calories}</div> <div className="badge badge-outline badge-primary">{meal.protein} protein</div> <div className="badge badge-outline badge-secondary">{meal.carbs} carbs</div> <div className="badge badge-outline badge-accent">{meal.fats} fat</div> </div> )} <div className="card-actions justify-between items-center mt-4 pt-4 border-t border-base-300"> <label className="label cursor-pointer gap-2"> <input type="checkbox" checked={isSelected} onChange={() => toggleMealSelection(index)} className="checkbox checkbox-accent" /> <span className="label-text">Replace</span> </label> <button onClick={() => handleSelectMeal(index)} className="btn btn-secondary btn-sm gap-2"> <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg> Get Recipe </button> </div> </div> </div> ); })} </div> <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4"> <button onClick={generateShareLink} className="btn btn-primary">Share Plan</button> <button onClick={handleStartOver} className="btn btn-error">Start Over</button> </div> </div> );
     
@@ -228,20 +283,17 @@ const App = () => {
         if (!detailedRecipe) return <p className="text-center text-error">Error loading recipe.</p>;
         const { recipeName, prepTimeMinutes, cookTimeMinutes, ingredients, timeline, instructions } = detailedRecipe;
         const targetTimeDisplay = convertToActualTime(dinnerTime, 0);
-
         const favoriteInstance = favorites.find(fav => fav.recipeName === recipeName);
         const isFavorite = !!favoriteInstance;
 
         const handleToggleFavorite = () => {
             if (isFavorite) {
-                // Delete logic
                 if (!db || !userId || !favoriteInstance.id) return;
                 const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favoriteInstance.id);
                 deleteDoc(docRef)
                     .then(() => toast.success(`"${recipeName}" removed from favorites.`))
                     .catch((e) => toast.error("Failed to remove favorite."));
             } else {
-                // Save logic
                 saveFavorite();
             }
         };
@@ -262,7 +314,6 @@ const App = () => {
                             )}
                             <span>{isFavorite ? 'Remove Favorite' : 'Save Favorite'}</span>
                         </button>
-
                         <button onClick={handlePrint} className="inline-flex items-center justify-center gap-2 text-sm h-8 px-3 rounded-lg hover:bg-base-200 transition-colors no-print">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03-.48.062-.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.662 0 1.18.568 1.12 1.227l-.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m0 0h11.32z" /></svg>
                             <span>Print</span>
@@ -296,7 +347,7 @@ const App = () => {
                 content = ( <div className="max-w-2xl mx-auto"> <div className="bg-base-200 p-6 rounded-box"> <div className="form-control"> <label className="label mb-2"> <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span> </label> <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows="3" placeholder="e.g., Low-carb, no seafood, prioritize chicken..." className="textarea textarea-bordered h-24" disabled={isLoading}></textarea> </div> <button onClick={() => processPlanGeneration(false)} disabled={!query.trim()} className="btn btn-primary w-full mt-4">Generate 7-Day Plan</button> </div> </div> ); 
                 break;
             case 'review': content = planData ? <ReviewView /> : null; break;
-            case 'shopping': content = planData ? <ShoppingView /> : null; break;
+            case 'shopping': content = planData ? <ShoppingView openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} /> : null; break;
             case 'favorites': content = <FavoritesView />; break;
             case 'timing': content = planData ? <TimingView /> : null; break;
             case 'detail': content = detailedRecipe ? <DetailView /> : null; break;
