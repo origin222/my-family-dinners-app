@@ -11,7 +11,6 @@ import { convertToActualTime, mergeShoppingLists, convertIngredient } from './ut
 import { ThemeToggle, PlanSkeleton, UnitConverter } from './components/UIComponents';
 import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView } from './components/ViewComponents';
 
-
 // --- CONFIGURATION ---
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
 const VERCEL_APP_ID = import.meta.env.VITE_APP_ID;
@@ -51,7 +50,16 @@ const App = () => {
     const [regenerationConstraint, setRegenerationConstraint] = useState('');
     const [openShoppingCategory, setOpenShoppingCategory] = useState(null);
 
-    const updateShoppingList = useCallback(async (updatedList) => { if (!db || !userId || !planData) return; const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await updateDoc(docRef, { shoppingList: updatedList }); } catch (e) { console.error("Firestore Update Error:", e); toast.error("Could not update shopping list."); } }, [db, userId, planData, appId]);
+    const updateShoppingList = useCallback(async (updatedList) => {
+        if (!db || !userId || !planData) return;
+        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
+        try {
+            await updateDoc(docRef, { shoppingList: updatedList });
+        } catch (e) {
+            console.error("Firestore Update Error:", e);
+            toast.error("Could not update shopping list.");
+        }
+    }, [db, userId, planData, appId]);
 
     const handleSelectMeal = useCallback((index) => { setSelectedMealIndex(index); setDetailedRecipe(null); setView('timing'); }, []);
     const toggleMealSelection = useCallback((index) => { setMealsToRegenerate(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); }, []);
@@ -93,11 +101,11 @@ const App = () => {
         if (isRegeneration && oldPlan) {
             const mealsToUpdate = mealsToRegenerate.map(index => oldPlan.weeklyPlan[index].day).join(', ');
             const unchangedMeals = oldPlan.weeklyPlan.filter((_, index) => !mealsToRegenerate.includes(index)).map(meal => `${meal.day}: ${meal.meal} (${meal.description})`).join('; ');
-            systemPrompt = `You are updating a meal plan based on: "${oldPlan.initialQuery}". Generate NEW meals for: ${mealsToUpdate}. Keep these meals: ${unchangedMeals}. New meals must follow this constraint: ${regenerationConstraint || 'None'}. Generate a single 'shoppingList' for ALL 7 final meals. ${macroInstruction}`;
-            userPrompt = `Replace meals for ${mealsToUpdate}. Return the full 7-day plan with a new consolidated shopping list.`;
+            systemPrompt = `You are updating a meal plan. New meals must follow this constraint: ${regenerationConstraint || 'None'}. Generate NEW meals for: ${mealsToUpdate}. Keep these meals: ${unchangedMeals}. ${macroInstruction}`;
+            userPrompt = `Replace meals for ${mealsToUpdate}. Return the full 7-day plan and a new consolidated shopping list.`;
             setRegenerationConstraint('');
         } else {
-            systemPrompt = `You are a meal planner. Generate a 7-day dinner plan and shopping list based on: "${query.trim()}". Provide exactly 7 meals. Consolidate ALL ingredients into a single 'shoppingList'. 'isChecked' must be 'false'. ${macroInstruction}`;
+            systemPrompt = `You are a meal planner. Generate a 7-day dinner plan and shopping list based on: "${query.trim()}". ${macroInstruction}`;
         }
         try {
             const payload = { contents: [{ parts: [{ text: userPrompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: PLAN_RESPONSE_SCHEMA } };
@@ -127,12 +135,41 @@ const App = () => {
         }
     }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch]);
 
-    const generateRecipeDetail = useCallback(async () => { /* ... same as before ... */ }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
+    const generateRecipeDetail = useCallback(async () => {
+        if (!db || !userId) { toast.error("Not connected. Please refresh."); return; }
+        if (isLoading) return;
+        if (selectedMealIndex === null || !planData) { toast.error("Please select a meal first."); return; }
+        setIsLoading(true);
+        setError(null);
+        const meal = planData.weeklyPlan[selectedMealIndex];
+        const targetTime = convertToActualTime(dinnerTime, 0);
+        const detailQuery = `Generate a full recipe for "${meal.meal}" based on: "${meal.description}". The meal must be ready at ${targetTime}. Provide a timeline using 'minutesBefore' (e.g., 60, 45, 10).`;
+        const systemPrompt = "You are a chef. Provide precise recipe details and a reverse-engineered cooking timeline.";
+        try {
+            const payload = { contents: [{ parts: [{ text: detailQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: RECIPE_RESPONSE_SCHEMA } };
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
+            const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                const errorMessage = errorBody?.error?.message || response.statusText;
+                throw new Error(errorMessage);
+            }
+            const result = await response.json();
+            const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonString) { throw new Error("AI response was empty."); }
+            const parsedRecipe = JSON.parse(jsonString);
+            parsedRecipe.dinnerTime = dinnerTime;
+            setDetailedRecipe(parsedRecipe);
+            setView('detail');
+        } catch (e) {
+            console.error("Recipe Generation Error:", e);
+            toast.error(`Failed to generate recipe: ${e.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
 	useEffect(() => {
-        if (Object.keys(firebaseConfig).length === 0) {
-            setError("Firebase config is missing. Check Vercel environment variables.");
-            return;
-        };
+        if (Object.keys(firebaseConfig).length === 0) return;
         try {
             const app = initializeApp(firebaseConfig);
             const authInstance = getAuth(app);
@@ -140,19 +177,12 @@ const App = () => {
             setDb(dbInstance);
             setIsFirebaseInitialized(true);
             const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-                if (user) {
-                    setUserId(user.uid);
-                } else {
-                    await signInAnonymously(authInstance);
-                    setUserId(authInstance.currentUser?.uid || crypto.randomUUID());
-                }
+                if (user) { setUserId(user.uid); } 
+                else { await signInAnonymously(authInstance); setUserId(authInstance.currentUser?.uid || crypto.randomUUID()); }
                 setIsAuthReady(true);
             });
             return () => unsubscribe();
-        } catch (e) {
-            console.error("Firebase Initialization Error:", e);
-            setError(`Failed to initialize Firebase: ${e.message}`);
-        }
+        } catch (e) { console.error("Firebase Initialization Error:", e); setError(`Failed to initialize Firebase: ${e.message}`); }
     }, []);
 
     useEffect(() => {
@@ -162,19 +192,14 @@ const App = () => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 setPlanData(data);
-                if (!['shopping', 'timing', 'detail', 'favorites', 'public'].includes(view)) {
-                    setView('review');
-                }
+                if (!['shopping', 'timing', 'detail', 'favorites', 'public'].includes(view)) setView('review');
                 if (!query) setQuery(data.initialQuery || '');
             } else {
                 setPlanData(null);
                 setView('planning');
                 setDetailedRecipe(null);
             }
-        }, (e) => {
-            console.error("Firestore Snapshot Error:", e);
-            setError("Could not connect to the database.");
-        });
+        }, (e) => { console.error("Firestore Snapshot Error:", e); setError("Could not connect to the database."); });
         return () => unsubscribe();
     }, [db, userId, isAuthReady]);
 
@@ -184,10 +209,7 @@ const App = () => {
         const unsubscribe = onSnapshot(favoritesCollectionRef, (snapshot) => {
             const favoriteList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             setFavorites(favoriteList);
-        }, (e) => {
-            console.error("Favorites Snapshot Error:", e);
-            setError("Could not load saved favorites.");
-        });
+        }, (e) => { console.error("Favorites Snapshot Error:", e); setError("Could not load saved favorites."); });
         return () => unsubscribe();
     }, [db, userId, isAuthReady]);
     
