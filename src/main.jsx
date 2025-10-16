@@ -1,8 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
+import App, { ErrorBoundary } from './App.jsx'
 import './index.css'
-import { ErrorBoundary } from './App.jsx' // Add this import
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

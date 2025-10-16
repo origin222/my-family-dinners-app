@@ -1,7 +1,9 @@
-// Error Boundary Component - Add this first
-import React from 'react'; // Make sure this is the very first import
+import React from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import toast, { Toaster } from 'react-hot-toast';
 
-class ErrorBoundary extends React.Component {
+// Error Boundary Component
+export class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -31,10 +33,6 @@ class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
-
-// Then your existing imports
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import toast, { Toaster } from 'react-hot-toast';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
