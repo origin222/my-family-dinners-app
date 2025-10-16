@@ -353,6 +353,36 @@ const App = () => {
     const [regenerationConstraint, setRegenerationConstraint] = useState('');
     const [openShoppingCategory, setOpenShoppingCategory] = useState(null);
 
+    useEffect(() => {
+        try {
+            console.log('Starting Firebase initialization...', { firebaseConfig });
+            const app = initializeApp(firebaseConfig);
+            console.log('Firebase app initialized');
+            const auth = getAuth(app);
+            const firestore = getFirestore(app);
+            setDb(firestore);
+            setIsFirebaseInitialized(true);
+            console.log('Firebase initialized successfully');
+            
+            onAuthStateChanged(auth, (user) => {
+                console.log('Auth state changed:', user ? 'User exists' : 'No user');
+                if (user) {
+                    console.log('User authenticated:', user.uid);
+                    setUserId(user.uid);
+                } else {
+                    console.log('No user, signing in anonymously...');
+                    signInAnonymously(auth)
+                        .then(() => console.log('Anonymous auth successful'))
+                        .catch(error => console.error('Anonymous auth failed:', error));
+                }
+                setIsAuthReady(true);
+            });
+        } catch (error) {
+            console.error('Firebase initialization error:', error);
+            setError(error.message);
+        }
+    }, []);
+
     const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId, appId]);
     const handlePrint = useCallback(() => { window.print(); }, []);
     const handleCheckItem = useCallback((index) => { if (!planData) return; const newShoppingList = [...planData.shoppingList]; newShoppingList[index].isChecked = !newShoppingList[index].isChecked; updateShoppingList(newShoppingList); }, [planData, updateShoppingList]);
