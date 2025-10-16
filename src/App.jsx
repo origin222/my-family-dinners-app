@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import toast, { Toaster } from 'react-hot-toast';
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
@@ -104,12 +105,9 @@ const App = () => {
     // --- HANDLERS AND CORE LOGIC ---
     const handleSelectMeal = useCallback((index) => { setSelectedMealIndex(index); setDetailedRecipe(null); setView('timing'); }, []);
     const toggleMealSelection = (index) => { setMealsToRegenerate(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); };
-    const handleStartOver = async () => { if (!db || !userId) return; if (window.confirm("Are you sure you want to delete this entire plan and start over?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); } catch (e) { console.error("Error deleting plan:", e); setError("Could not delete the plan. Please try again."); } } };
+    const handleStartOver = async () => { if (!db || !userId) return; if (window.confirm("Are you sure you want to delete this entire plan and start over?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted. Let's start a new one!"); } catch (e) { console.error("Error deleting plan:", e); setError("Could not delete the plan. Please try again."); } } };
     
-    // --- PRINT HANDLER (SIMPLIFIED) ---
-    const handlePrint = useCallback(() => {
-        window.print();
-    }, []);
+    const handlePrint = useCallback(() => { window.print(); }, []);
 
     useEffect(() => { if (!VERCEL_FIREBASE_CONFIG_STRING || !Object.keys(firebaseConfig).length) { setError("Error: Failed to initialize Firebase."); return; } try { const app = initializeApp(firebaseConfig); const authInstance = getAuth(app); const dbInstance = getFirestore(app); setDb(dbInstance); setIsFirebaseInitialized(true); const unsubscribe = onAuthStateChanged(authInstance, async (user) => { if (user) { setUserId(user.uid); } else { await signInAnonymously(authInstance); setUserId(authInstance.currentUser?.uid || crypto.randomUUID()); } setIsAuthReady(true); }); return () => unsubscribe(); } catch (e) { console.error("Firebase Initialization Error:", e); setError(`Failed to initialize Firebase.`); } }, []);
     useEffect(() => { if (!db || !userId || !isAuthReady) return; const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); const unsubscribe = onSnapshot(docRef, (docSnap) => { if (docSnap.exists()) { const data = docSnap.data(); setPlanData(data); if (!['shopping', 'timing', 'detail', 'favorites', 'public'].includes(view)) { setView('review'); } if (!query) setQuery(data.initialQuery || ''); } else { setPlanData(null); setView('planning'); setDetailedRecipe(null); } }, (e) => { console.error("Firestore Snapshot Error:", e); }); return () => unsubscribe(); }, [db, userId, isAuthReady, view, query]);
@@ -163,20 +161,74 @@ const App = () => {
     const generateRecipeDetail = useCallback(async () => { if (!db || !userId || isLoading || selectedMealIndex === null || !planData) return; setIsLoading(true); setError(null); setDetailedRecipe(null); const meal = planData.weeklyPlan[selectedMealIndex]; const targetTime = convertToActualTime(dinnerTime, 0); const detailQuery = `Generate a full recipe for "${meal.meal}" based on: "${meal.description}". The meal must be ready at ${targetTime}. Provide a timeline using 'minutesBefore' (e.g., 60, 45, 10).`; const systemPrompt = "You are a chef. Provide precise recipe details and a reverse-engineered cooking timeline."; try { const payload = { contents: [{ parts: [{ text: detailQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: RECIPE_RESPONSE_SCHEMA } }; const url = `${API_URL}?key=${finalGeminiApiKey}`; const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); if (!response.ok) { throw new Error(`API error: ${response.statusText}`); } const result = await response.json(); const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text; if (!jsonString) { throw new Error("AI response was empty."); } const parsedRecipe = JSON.parse(jsonString); parsedRecipe.dinnerTime = dinnerTime; setDetailedRecipe(parsedRecipe); setView('detail'); } catch (e) { console.error("Recipe Generation Error:", e); setError(`Failed to generate recipe details: ${e.message}.`); } finally { setIsLoading(false); } }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
     const updateShoppingList = useCallback(async (updatedList) => { if (!db || !userId || !planData) return; const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await setDoc(docRef, { ...planData, shoppingList: updatedList }); } catch (e) { console.error("Firestore Update Error:", e); } }, [db, userId, planData]);
     const handleCheckItem = useCallback((index) => { const newShoppingList = planData.shoppingList.map((item, i) => i === index ? { ...item, isChecked: !item.isChecked } : item); updateShoppingList(newShoppingList); }, [planData, updateShoppingList]);
-    const handleClearChecked = useCallback(() => { const uncheckedList = planData.shoppingList.filter(item => !item.isChecked); updateShoppingList(uncheckedList); }, [planData, updateShoppingList]);
-    const saveFavorite = useCallback(async () => { if (!db || !userId || !detailedRecipe) return; const favoritesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME); const newFavorite = { ...detailedRecipe, lastUsed: new Date().toISOString(), savedAt: new Date().toISOString(), mealSource: planData?.weeklyPlan[selectedMealIndex]?.meal || detailedRecipe.recipeName, }; try { await setDoc(doc(favoritesCollectionRef), newFavorite); } catch (e) { console.error("Error saving favorite:", e); setError("Failed to save meal to favorites."); } }, [db, userId, detailedRecipe, planData, selectedMealIndex]);
+    
+    const handleClearChecked = useCallback(() => {
+        const uncheckedList = planData.shoppingList.filter(item => !item.isChecked);
+        updateShoppingList(uncheckedList);
+        toast.success('Checked items cleared!');
+    }, [planData, updateShoppingList]);
+
+    const saveFavorite = useCallback(async () => {
+        if (!db || !userId || !detailedRecipe) return;
+        const favoritesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME);
+        const newFavorite = { ...detailedRecipe, lastUsed: new Date().toISOString(), savedAt: new Date().toISOString(), mealSource: planData?.weeklyPlan[selectedMealIndex]?.meal || detailedRecipe.recipeName, };
+        try {
+            await setDoc(doc(favoritesCollectionRef), newFavorite);
+            toast.success(`"${detailedRecipe.recipeName}" saved to favorites!`);
+        } catch (e) {
+            console.error("Error saving favorite:", e);
+            toast.error("Failed to save meal to favorites.");
+        }
+    }, [db, userId, detailedRecipe, planData, selectedMealIndex]);
+
     const loadFavorite = useCallback(async (favorite) => { setDetailedRecipe(favorite); setDinnerTime(favorite.dinnerTime || '19:00'); setView('detail'); if (favorite.id) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favorite.id); try { await updateDoc(docRef, { lastUsed: new Date().toISOString() }); } catch (e) { console.error("Error updating lastUsed timestamp:", e); } } }, [db, userId]);
-    const deleteFavorite = useCallback(async (id) => { if (!db || !userId) return; if (!window.confirm("Are you sure?")) return; const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id); try { await deleteDoc(docRef); } catch (e) { console.error("Error deleting favorite:", e); setError("Failed to delete favorite."); } }, [db, userId]);
-    const generateShareLink = useCallback(async () => { if (!db || !userId || !planData) return; const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId); const publicPlanData = { weeklyPlan: planData.weeklyPlan, initialQuery: planData.initialQuery, userId: userId, userName: "A Friend", sharedAt: new Date().toISOString(), }; try { await setDoc(shareDocRef, publicPlanData); const path = `/share/${userId}`; alert(`Shareable Link Path: ${path}`); } catch (e) { console.error("Error sharing plan:", e); setError("Failed to generate share link."); } }, [db, userId, planData]);
+    
+    const deleteFavorite = useCallback(async (id, name) => {
+        if (!db || !userId) return;
+        if (window.confirm("Are you sure you want to delete this favorite?")) {
+            const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id);
+            try {
+                await deleteDoc(docRef);
+                toast.success(`"${name}" deleted from favorites.`);
+            } catch (e) {
+                console.error("Error deleting favorite:", e);
+                toast.error("Failed to delete favorite.");
+            }
+        }
+    }, [db, userId]);
+
+    const generateShareLink = useCallback(async () => {
+        if (!db || !userId || !planData) return;
+        const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId);
+        const publicPlanData = { weeklyPlan: planData.weeklyPlan, initialQuery: planData.initialQuery, userId: userId, userName: "A Friend", sharedAt: new Date().toISOString(), };
+        try {
+            await setDoc(shareDocRef, publicPlanData);
+            const url = `${window.location.origin}/share/${userId}`;
+            
+            // Custom toast with a copy button
+            toast((t) => (
+                <div className="flex flex-col gap-2">
+                    <span className="text-sm font-semibold">Shareable link generated!</span>
+                    <div className="flex gap-2">
+                        <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" />
+                        <button className="btn btn-sm btn-primary" onClick={() => {
+                            navigator.clipboard.writeText(url);
+                            toast.success('Copied to clipboard!', { id: t.id });
+                        }}>Copy</button>
+                    </div>
+                </div>
+            ), { duration: 6000 });
+
+        } catch (e) {
+            console.error("Error sharing plan:", e);
+            toast.error("Failed to generate share link.");
+        }
+    }, [db, userId, planData]);
+
     const convertIngredient = (ingredientString, targetUnit) => { if (!ingredientString) return { original: 'N/A', converted: 'N/A' }; const parts = ingredientString.toLowerCase().match(/(\d+\.?\d*)\s*([a-z]+)/); if (!parts) return { original: ingredientString, converted: ingredientString }; const value = parseFloat(parts[1]); const unit = parts[2].trim(); if (targetUnit === 'metric') { const conversion = UNIT_CONVERSIONS[unit]; if (conversion) { const newValue = value * conversion.factor; return { original: `${value} ${unit}`, converted: `${newValue.toFixed(1)} ${conversion.unit}` }; } } return { original: ingredientString, converted: "N/A" }; };
 
-    // --- UI TWEAK: Improved Dark Mode Toggle Component ---
     const ThemeToggle = () => { const [theme, setTheme] = useState(localStorage.getItem('theme') ? localStorage.getItem('theme') : 'cupcake'); useEffect(() => { document.querySelector('html').setAttribute('data-theme', theme); localStorage.setItem('theme', theme); }, [theme]); const handleToggle = (e) => { setTheme(e.target.checked ? 'dark' : 'cupcake'); }; return ( <div className="flex items-center gap-2"> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg> <input type="checkbox" onChange={handleToggle} checked={theme === 'dark'} className="toggle theme-controller" /> <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg> </div> ); };
-    
-    // --- UI TWEAK: Skeleton Loader Component ---
     const PlanSkeleton = () => ( <div> <h2 className="text-3xl font-bold mb-6">Generating Your Plan...</h2> <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"> {[...Array(6)].map((_, i) => ( <div key={i} className="flex flex-col gap-4 w-full"> <div className="skeleton h-36 w-full"></div> <div className="skeleton h-4 w-28"></div> <div className="skeleton h-4 w-full"></div> </div> ))} </div> </div> );
-    
-    // --- UI COMPONENTS ---
     const UnitConverter = ({ ingredients }) => { const [conversionType, setConversionType] = useState('metric'); return ( <div className="p-4 bg-base-200 rounded-box"> <div className="flex justify-between items-center mb-4 border-b pb-2"> <h4 className="text-xl font-bold">Unit Converter</h4> <select value={conversionType} onChange={(e) => setConversionType(e.target.value)} className="select select-bordered select-sm"> <option value="metric">To Metric (g/kg/ml)</option> <option value="imperial">To Imperial (lb/oz/cup)</option> </select> </div> <ul className="space-y-1 text-sm"> {ingredients.map((item, index) => { const conversion = convertIngredient(item, 'metric'); return ( <li key={index} className="flex justify-between border-b border-base-300 last:border-b-0 py-1"> <span>{item}</span> <span className="font-semibold text-accent">{conversion.converted}</span> </li> ); })} </ul> </div> ); };
     const ShoppingView = () => { const groupedList = useMemo(() => { const list = {}; if (planData?.shoppingList) { planData.shoppingList.forEach(item => { const category = item.category || 'Uncategorized'; if (!list[category]) list[category] = []; list[category].push(item); }); } return list; }, [planData?.shoppingList]); return ( <div> <div className="flex justify-between items-center mb-6"> <h2 className="text-3xl font-bold">Grocery Shopping List</h2> <button onClick={handleClearChecked} disabled={planData?.shoppingList?.filter(i => i.isChecked).length === 0} className="btn btn-error btn-sm">Clear Checked</button> </div> <div className="space-y-2"> {Object.keys(groupedList).sort().map(category => ( <div key={category} className="collapse collapse-arrow bg-base-200"> <input type="radio" name="shopping-accordion" defaultChecked={Object.keys(groupedList).sort()[0] === category} /> <div className="collapse-title text-xl font-medium">{category} ({groupedList[category].length})</div> <div className="collapse-content"> {groupedList[category].map((item) => { const globalIndex = planData.shoppingList.findIndex(i => i.item === item.item && i.quantity === item.quantity && i.category === item.category); return ( <div key={globalIndex} className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${item.isChecked ? 'opacity-50 line-through' : 'hover:bg-base-100'}`} onClick={() => handleCheckItem(globalIndex)}> <div className="flex items-center gap-4"> <input type="checkbox" checked={item.isChecked} readOnly className="checkbox checkbox-primary" /> <div> <span className="font-semibold">{item.item}</span> <span className="text-xs opacity-70 block">{item.quantity}</span> </div> </div> </div> ); })} </div> </div> ))} </div> {planData?.shoppingList?.length === 0 && ( <p className="text-center mt-10 p-6 bg-base-200 rounded-box">Your shopping list is empty!</p> )} </div> ); };
     
@@ -209,7 +261,7 @@ const App = () => {
                                 <span>Saved to Favorites</span>
                             </p>
                         )}
-                        <button onClick={handlePrint} className="inline-flex items-center justify-center gap-2 text-sm h-8 px-3 rounded-lg hover:bg-base-200 transition-colors no-print">
+                        <button onClick={handlePrint} className="inline-flex items-center gap-2 text-sm h-8 px-3 rounded-lg hover:bg-base-200 transition-colors no-print">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03-.48.062-.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.662 0 1.18.568 1.12 1.227l-.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m0 0h11.32z" /></svg>
                             <span>Print</span>
                         </button>
@@ -226,7 +278,7 @@ const App = () => {
         );
     };
 
-    const FavoritesView = () => ( <div> <h2 className="text-3xl font-bold mb-6">Your Saved Favorites ({favorites.length})</h2> <div className="space-y-4"> {favorites.length === 0 ? ( <p className="text-center p-6 bg-base-200 rounded-box">You haven't saved any favorite recipes yet.</p> ) : ( favorites.map((fav) => ( <div key={fav.id} className="card card-side bg-base-100 shadow-md"> <div className="card-body"> <h3 className="card-title text-secondary">{fav.recipeName}</h3> <p className="text-sm opacity-70">Last Made: {fav.lastUsed ? new Date(fav.lastUsed).toLocaleDateString() : 'Never'}</p> <div className="card-actions justify-end"> <button onClick={() => deleteFavorite(fav.id)} className="btn btn-ghost btn-sm">Delete</button> <button onClick={() => loadFavorite(fav)} className="btn btn-primary btn-sm">View Recipe</button> </div> </div> </div> )) )} </div> </div> );
+    const FavoritesView = () => ( <div> <h2 className="text-3xl font-bold mb-6">Your Saved Favorites ({favorites.length})</h2> <div className="space-y-4"> {favorites.length === 0 ? ( <p className="text-center p-6 bg-base-200 rounded-box">You haven't saved any favorite recipes yet.</p> ) : ( favorites.map((fav) => ( <div key={fav.id} className="card card-side bg-base-100 shadow-md"> <div className="card-body"> <h3 className="card-title text-secondary">{fav.recipeName}</h3> <p className="text-sm opacity-70">Last Made: {fav.lastUsed ? new Date(fav.lastUsed).toLocaleDateString() : 'Never'}</p> <div className="card-actions justify-end"> <button onClick={() => deleteFavorite(fav.id, fav.recipeName)} className="btn btn-ghost btn-sm">Delete</button> <button onClick={() => loadFavorite(fav)} className="btn btn-primary btn-sm">View Recipe</button> </div> </div> </div> )) )} </div> </div> );
 
     // F. Main Render Switch
     let content;
@@ -253,6 +305,7 @@ const App = () => {
     // G. Global Layout
     return (
         <div className="min-h-screen bg-base-200 p-4 sm:p-8">
+            <Toaster position="top-right" />
             <div className="max-w-5xl mx-auto bg-base-100 rounded-box shadow-2xl p-6 sm:p-10">
                 <header className="flex justify-between items-center mb-10 border-b border-base-300 pb-4 no-print">
                     <div className="text-left">
