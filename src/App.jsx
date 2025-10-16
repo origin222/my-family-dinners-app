@@ -355,7 +355,10 @@ const App = () => {
 
     const updateShoppingList = useCallback(async (newShoppingList) => {
         if (!db || !userId) return;
-        setPlanData(prev => prev ? { ...prev, shoppingList: newShoppingList } : null);
+        setPlanData(prev => {
+            if (!prev) return prev;
+            return { ...prev, shoppingList: newShoppingList };
+        });
         const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
         try {
             await updateDoc(docRef, { shoppingList: newShoppingList });
