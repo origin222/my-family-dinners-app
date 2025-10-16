@@ -1,3 +1,56 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* --- PRINTER-FRIENDLY STYLES --- */
+@media print {
+    /* Hide all non-essential UI elements */
+    .no-print {
+        display: none !important;
+    }
+
+    /* Reset the page layout for printing */
+    body * {
+        visibility: hidden;
+    }
+
+    #printable-recipe, #printable-recipe * {
+        visibility: visible;
+    }
+
+    #printable-recipe {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        padding: 1rem;
+        color: black; /* Ensure all text is black */
+    }
+
+    /* Force all text and backgrounds to a simple format */
+    h1, h2, h3, h4, p, li, span, div {
+        color: black !important;
+        background-color: white !important;
+    }
+
+    /* Prevent sections from splitting across pages */
+    h3, ul, ol {
+        page-break-after: auto;
+        page-break-inside: avoid;
+    }
+
+    /* Fix the DaisyUI "steps" component for printing */
+    .steps .step {
+        color: black !important;
+    }
+    .steps .step:before, .steps .step:after {
+        background-color: #ccc !important; /* Use a light grey for lines */
+    }
+    .steps .step-primary:after {
+        background-color: black !important;
+    }
+    .steps .step-primary[data-content]:before {
+        background-color: black !important;
+        color: white !important;
+    }
+}

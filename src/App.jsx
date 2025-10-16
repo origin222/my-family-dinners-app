@@ -106,41 +106,9 @@ const App = () => {
     const toggleMealSelection = (index) => { setMealsToRegenerate(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); };
     const handleStartOver = async () => { if (!db || !userId) return; if (window.confirm("Are you sure you want to delete this entire plan and start over?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); } catch (e) { console.error("Error deleting plan:", e); setError("Could not delete the plan. Please try again."); } } };
     
-    // --- PRINT HANDLER ---
+    // --- PRINT HANDLER (SIMPLIFIED) ---
     const handlePrint = useCallback(() => {
-        const printStyles = `
-            @media print {
-                body * {
-                    visibility: hidden;
-                }
-                #printable-recipe, #printable-recipe * {
-                    visibility: visible;
-                }
-                #printable-recipe {
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                    width: 100%;
-                }
-                .no-print {
-                    display: none !important;
-                }
-                .card, .steps {
-                   box-shadow: none !important;
-                   border: none !important;
-                }
-                h2, h3 {
-                    color: black !important;
-                }
-            }
-        `;
-        const styleSheet = document.createElement("style");
-        styleSheet.type = "text/css";
-        styleSheet.innerText = printStyles;
-        document.head.appendChild(styleSheet);
         window.print();
-        // Clean up the style sheet after printing
-        styleSheet.remove();
     }, []);
 
     useEffect(() => { if (!VERCEL_FIREBASE_CONFIG_STRING || !Object.keys(firebaseConfig).length) { setError("Error: Failed to initialize Firebase."); return; } try { const app = initializeApp(firebaseConfig); const authInstance = getAuth(app); const dbInstance = getFirestore(app); setDb(dbInstance); setIsFirebaseInitialized(true); const unsubscribe = onAuthStateChanged(authInstance, async (user) => { if (user) { setUserId(user.uid); } else { await signInAnonymously(authInstance); setUserId(authInstance.currentUser?.uid || crypto.randomUUID()); } setIsAuthReady(true); }); return () => unsubscribe(); } catch (e) { console.error("Firebase Initialization Error:", e); setError(`Failed to initialize Firebase.`); } }, []);
@@ -216,7 +184,6 @@ const App = () => {
     
     const TimingView = () => { const meal = planData.weeklyPlan[selectedMealIndex]; return ( <div className="p-8 bg-base-200 rounded-box text-center"> <h2 className="text-3xl font-bold mb-2">Planning Timeline for {meal.day}</h2> <p className="text-xl mb-6">Meal: <span className="font-bold">{meal.meal}</span></p> <div className="form-control w-full max-w-xs mx-auto"> <label className="label"><span className="label-text">What time is dinner?</span></label> <input type="time" value={dinnerTime} onChange={(e) => setDinnerTime(e.target.value)} step="300" className="input input-bordered text-center text-2xl font-mono" /> </div> <button onClick={generateRecipeDetail} disabled={isLoading} className="btn btn-success mt-6 w-full max-w-xs">Generate Timeline & Recipe</button> </div> ); };
     
-    // --- COMPONENT UPDATE: DetailView with Print Button ---
     const DetailView = () => {
         if (!detailedRecipe) return <p className="text-center text-error">Error loading recipe.</p>;
         const { recipeName, prepTimeMinutes, cookTimeMinutes, ingredients, timeline, instructions } = detailedRecipe;
@@ -251,7 +218,7 @@ const App = () => {
                 <div className="space-y-10 mt-10">
                     <div> <h3 className="text-3xl font-bold mb-5">Step-by-Step Timeline</h3> <ul className="steps steps-vertical w-full"> {timeline.sort((a,b) => b.minutesBefore - a.minutesBefore).map((step, index) => ( <li key={index} data-content="●" className="step step-primary"> <div className="text-left p-2 w-full"> <p className="font-bold text-lg">{convertToActualTime(dinnerTime, step.minutesBefore)}</p> <p className="text-sm opacity-80">{step.action}</p> </div> </li> ))} </ul> </div>
                     <div> <h3 className="text-3xl font-bold mb-5">Ingredients</h3> <ul className="list-disc list-inside space-y-2 text-lg p-4 bg-base-200 rounded-box"> {ingredients.map((item, index) => ( <li key={index}>{item}</li> ))} </ul> </div>
-                    <UnitConverter ingredients={ingredients} />
+                    <div className="no-print"><UnitConverter ingredients={ingredients} /></div>
                     <div> <h3 className="text-3xl font-bold mb-5">Instructions</h3> <ol className="list-decimal list-inside space-y-4"> {instructions.map((step, index) => ( <li key={index}><span>{step}</span></li> ))} </ol> </div>
                     <button onClick={() => setView('review')} className="btn btn-primary w-full mt-8 no-print">Back to Meal Plan</button>
                 </div>
@@ -287,7 +254,7 @@ const App = () => {
     return (
         <div className="min-h-screen bg-base-200 p-4 sm:p-8">
             <div className="max-w-5xl mx-auto bg-base-100 rounded-box shadow-2xl p-6 sm:p-10">
-                <header className="flex justify-between items-center mb-10 border-b border-base-300 pb-4">
+                <header className="flex justify-between items-center mb-10 border-b border-base-300 pb-4 no-print">
                     <div className="text-left">
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-primary">Family Dinner Plans</h1>
                         <p className="opacity-70 mt-1 text-sm sm:text-base">Plan, Shop, and Cook with Precision</p>
@@ -296,7 +263,7 @@ const App = () => {
                 </header>
 
                 {planData && (
-                    <div className="flex justify-center gap-8 mb-8">
+                    <div className="flex justify-center gap-8 mb-8 no-print">
                         <button onClick={() => setView('review')} disabled={!planData} className={`btn ${['review', 'timing', 'detail'].includes(view) ? 'btn-primary' : ''}`}>Dinner Plan</button>
                         <button onClick={() => setView('shopping')} disabled={!planData} className={`btn ${view === 'shopping' ? 'btn-primary' : ''}`}>Shopping List</button>
                         <button onClick={() => setView('favorites')} className={`btn ${view === 'favorites' ? 'btn-primary' : ''}`}>Favorites</button>
