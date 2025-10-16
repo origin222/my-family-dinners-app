@@ -3,6 +3,42 @@ import toast from 'react-hot-toast';
 import { UnitConverter } from './UIComponents';
 import { convertToActualTime } from '../utils/helpers';
 
+export const PlanningView = ({ query, setQuery, useFavorites, setUseFavorites, processPlanGeneration, favoritesCount }) => (
+    <div className="max-w-2xl mx-auto">
+        <div className="bg-base-200 p-6 rounded-box">
+            <div className="form-control w-full">
+                <label className="label">
+                    <span className="label-text text-lg font-bold">Family Preferences & Dietary Needs</span>
+                </label>
+                <textarea
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    rows="3"
+                    placeholder="e.g., Low-carb, no seafood..."
+                    className="textarea textarea-bordered h-24 mt-2"
+                />
+            </div>
+            
+            {favoritesCount > 0 && (
+                <div className="form-control mt-4">
+                    <label className="label cursor-pointer justify-start gap-4">
+                        <input
+                            type="checkbox"
+                            checked={useFavorites}
+                            onChange={(e) => setUseFavorites(e.target.checked)}
+                            className="checkbox checkbox-secondary"
+                        />
+                        <span className="label-text">Incorporate my {favoritesCount} favorite meals</span>
+                    </label>
+                </div>
+            )}
+
+            <button onClick={() => processPlanGeneration(false)} className="btn btn-primary w-full mt-6">Generate 7-Day Plan</button>
+        </div>
+    </div>
+);
+
+
 export const ShoppingView = ({ planData, handleClearChecked, handleCheckItem, openCategory, setOpenCategory, setView, handleAddItem, handleDeleteItem }) => {
     const [newItemName, setNewItemName] = useState('');
     const [newItemQuantity, setNewItemQuantity] = useState('');
