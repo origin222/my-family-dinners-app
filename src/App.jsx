@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+\import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
 
 // --- FIREBASE IMPORTS ---
@@ -7,9 +7,9 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 
 // --- LOCAL IMPORTS ---
-import { convertToActualTime, mergeShoppingLists, convertIngredient } from './utils/helpers';
+import { convertToActualTime, mergeShoppingLists } from './utils/helpers';
 import { ThemeToggle, PlanSkeleton } from './components/UIComponents';
-import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView, CookingView } from './components/views';
+import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView } from './components/views';
 
 // --- CONFIGURATION ---
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
@@ -49,10 +49,6 @@ const App = () => {
     const [useFavorites, setUseFavorites] = useState(false);
     const [selectedFavorites, setSelectedFavorites] = useState([]);
     const [sharedPlan, setSharedPlan] = useState(null);
-    const [isCooking, setIsCooking] = useState(false);
-
-    const enterCookingMode = useCallback(() => setIsCooking(true), []);
-    const exitCookingMode = useCallback(() => setIsCooking(false), []);
 
     const handleFavoriteSelection = useCallback((mealName) => {
         setSelectedFavorites(prev => 
@@ -97,7 +93,7 @@ const App = () => {
     const handleCheckItem = useCallback((index) => { if (!planData) return; const newShoppingList = [...planData.shoppingList]; newShoppingList[index].isChecked = !newShoppingList[index].isChecked; updateShoppingList(newShoppingList); }, [planData, updateShoppingList]);
     const handleClearChecked = useCallback(() => { if (!planData) return; const uncheckedList = planData.shoppingList.filter(item => !item.isChecked); updateShoppingList(uncheckedList); toast.success('Checked items cleared!'); }, [planData, updateShoppingList]);
     const loadFavorite = useCallback(async (favorite) => { setDetailedRecipe(favorite); setDinnerTime(favorite.dinnerTime || '19:00'); setView('detail'); if (favorite.id) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favorite.id); try { await updateDoc(docRef, { lastUsed: new Date().toISOString() }); } catch (e) { console.error("Error updating lastUsed timestamp:", e); } } }, [db, userId, appId]);
-    const deleteFavorite = useCallback(async (id, name) => { if (!db || !userId) return; const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id); try { await deleteDoc(docRef); toast.success(`"${name}" deleted.`); } catch (e) { toast.error("Failed to delete."); } }, [db, userId, appId]);
+    const deleteFavorite = useCallback(async (id, name) => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id); try { await deleteDoc(docRef); toast.success(`"${name}" deleted.`); } catch (e) { toast.error("Failed to delete."); } } }, [db, userId, appId]);
     const generateShareLink = useCallback(async () => { if (!db || !userId || !planData) return; const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId); const publicPlanData = { weeklyPlan: planData.weeklyPlan, initialQuery: planData.initialQuery, userId: userId, userName: "A Friend", sharedAt: new Date().toISOString(), }; try { await setDoc(shareDocRef, publicPlanData); const url = `${window.location.origin}/share/${userId}`; toast((t) => ( <div className="flex flex-col gap-2"> <span className="text-sm font-semibold">Shareable link!</span> <div className="flex gap-2"> <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" /> <button className="btn btn-sm btn-primary" onClick={() => { navigator.clipboard.writeText(url); toast.success('Copied!', { id: t.id }); }}>Copy</button> </div> </div> ), { duration: 6000 }); } catch (e) { toast.error("Failed to generate link."); } }, [db, userId, planData, appId]);
 
     const handleToggleFavorite = useCallback(() => {
@@ -136,11 +132,89 @@ const App = () => {
     }, []);
     
     const processPlanGeneration = useCallback(async (isRegeneration = false) => {
-        // ... (This function is unchanged, content omitted for brevity)
+        if (!db || !userId) { toast.error("Not connected to the database. Please refresh."); return; }
+        if (isLoading) return;
+        if (!query.trim() && !isRegeneration) { toast.error("Please enter your family's preferences first."); return; }
+        setIsLoading(true);
+        setError(null);
+        const oldPlan = planData;
+        let systemPrompt;
+        let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list.";
+        const macroInstruction = "For each meal, you MUST provide an estimated nutritional breakdown PER SERVING including 'calories', 'protein', 'carbs', and 'fats' as numbers. Infer serving size from user query.";
+        let favoritesInstruction = '';
+        if (useFavorites && selectedFavorites.length > 0) {
+            const favoriteMealsStr = selectedFavorites.join(', ');
+            favoritesInstruction = `You MUST include the following meals in the plan: ${favoriteMealsStr}. Generate new and creative meals for the remaining days.`;
+        }
+
+        if (isRegeneration && oldPlan) {
+            const mealsToUpdate = mealsToRegenerate.map(index => oldPlan.weeklyPlan[index].day).join(', ');
+            const unchangedMeals = oldPlan.weeklyPlan.filter((_, index) => !mealsToRegenerate.includes(index)).map(meal => `${meal.day}: ${meal.meal}`).join('; ');
+            systemPrompt = `You are updating a meal plan. New meals must follow this constraint: ${regenerationConstraint || 'None'}. Generate NEW meals for: ${mealsToUpdate}. Keep these meals: ${unchangedMeals}. ${macroInstruction} ${favoritesInstruction}`;
+            userPrompt = `Replace meals for ${mealsToUpdate}. Return the full 7-day plan and a new consolidated shopping list.`;
+            setRegenerationConstraint('');
+        } else {
+            systemPrompt = `You are a meal planner. Generate a 7-day dinner plan and shopping list based on: "${query.trim()}". ${macroInstruction} ${favoritesInstruction}`;
+        }
+        
+        try {
+            const payload = { contents: [{ parts: [{ text: userPrompt }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: PLAN_RESPONSE_SCHEMA } };
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
+            const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(errorBody?.error?.message || response.statusText);
+            }
+            const result = await response.json();
+            const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonString) { throw new Error("AI response was empty."); }
+            const parsedPlan = JSON.parse(jsonString);
+            const mergedList = mergeShoppingLists(parsedPlan.shoppingList, planData?.shoppingList);
+            const newPlanData = { ...parsedPlan, shoppingList: mergedList, initialQuery: query.trim() };
+            const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
+            await setDoc(docRef, newPlanData);
+            setView('review');
+        } catch (e) {
+            console.error("Plan Generation Error:", e);
+            toast.error(`Failed to generate plan: ${e.message}`);
+        } finally {
+            setIsLoading(false);
+            setMealsToRegenerate([]);
+        }
     }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch, useFavorites, selectedFavorites]);
 
     const generateRecipeDetail = useCallback(async () => {
-        // ... (This function is unchanged, content omitted for brevity)
+        if (!db || !userId) { toast.error("Not connected. Please refresh."); return; }
+        if (isLoading) return;
+        if (selectedMealIndex === null || !planData) { toast.error("Please select a meal first."); return; }
+        setIsLoading(true);
+        setError(null);
+        const meal = planData.weeklyPlan[selectedMealIndex];
+        const targetTime = convertToActualTime(dinnerTime, 0);
+        const detailQuery = `Generate a full recipe for "${meal.meal}" based on: "${meal.description}". The meal must be ready at ${targetTime}. Provide a timeline using 'minutesBefore' (e.g., 60, 45, 10).`;
+        const systemPrompt = "You are a chef. Provide precise recipe details and a reverse-engineered cooking timeline.";
+        try {
+            const payload = { contents: [{ parts: [{ text: detailQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: RECIPE_RESPONSE_SCHEMA } };
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
+            const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                const errorMessage = errorBody?.error?.message || response.statusText;
+                throw new Error(errorMessage);
+            }
+            const result = await response.json();
+            const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonString) { throw new Error("AI response was empty."); }
+            const parsedRecipe = JSON.parse(jsonString);
+            parsedRecipe.dinnerTime = dinnerTime;
+            setDetailedRecipe(parsedRecipe);
+            setView('detail');
+        } catch (e) {
+            console.error("Recipe Generation Error:", e);
+            toast.error(`Failed to generate recipe: ${e.message}`);
+        } finally {
+            setIsLoading(false);
+        }
     }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
 	useEffect(() => {
         const configString = import.meta.env.VITE_FIREBASE_CONFIG;
@@ -232,7 +306,7 @@ const App = () => {
             case 'shopping': content = <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} />; break;
             case 'favorites': content = <FavoritesView favorites={favorites} deleteFavorite={deleteFavorite} loadFavorite={loadFavorite} setView={setView} />; break;
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
-            case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} enterCookingMode={enterCookingMode} /> : null; break;
+            case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} /> : null; break;
             case 'share': content = <ShareView sharedPlan={sharedPlan} setView={setView} />; break;
             default: content = ( <div className="text-center py-20 bg-base-200 rounded-box"> <p className="text-xl font-medium">Enter your preferences to start!</p> </div> );
         }
@@ -241,10 +315,7 @@ const App = () => {
     return (
         <div className="min-h-screen bg-base-200 p-4 sm:p-8">
             <Toaster position="top-right" />
-            
-            {isCooking && detailedRecipe && <CookingView recipe={detailedRecipe} onExit={exitCookingMode} />}
-
-            <div className={`max-w-5xl mx-auto bg-base-100 rounded-box shadow-2xl p-6 sm:p-10 ${isCooking ? 'blur-sm' : ''}`}>
+            <div className="max-w-5xl mx-auto bg-base-100 rounded-box shadow-2xl p-6 sm:p-10">
                 <header className="flex justify-between items-center mb-10 border-b border-base-300 pb-4 no-print">
                     <div className="text-left">
                         <h1 className="text-3xl sm:text-4xl font-extrabold text-primary">Family Dinner Plans</h1>
