@@ -1,17 +1,18 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 
 export const CookingView = ({ recipe, onExit }) => {
     const [step, setStep] = useState(0);
     const [wakeLock, setWakeLock] = useState(null);
+    const stepsContainerRef = useRef(null); // Ref for the scrolling container
+    const stepRefs = useRef([]); // Ref for individual step elements
 
-    // Function to acquire a screen wake lock
+    // --- Screen Wake Lock Logic (Unchanged) ---
     const acquireWakeLock = useCallback(async () => {
         if ('wakeLock' in navigator) {
             try {
                 const lock = await navigator.wakeLock.request('screen');
                 setWakeLock(lock);
                 console.log('Screen Wake Lock is active.');
-                // Re-acquire lock when visibility changes
                 document.addEventListener('visibilitychange', handleVisibilityChange);
             } catch (err) {
                 console.error(`${err.name}, ${err.message}`);
@@ -25,11 +26,8 @@ export const CookingView = ({ recipe, onExit }) => {
         }
     }, [wakeLock, acquireWakeLock]);
 
-    // Acquire lock on component mount
     useEffect(() => {
         acquireWakeLock();
-
-        // Release lock on component unmount
         return () => {
             if (wakeLock !== null) {
                 wakeLock.release();
@@ -39,9 +37,20 @@ export const CookingView = ({ recipe, onExit }) => {
             }
         };
     }, [acquireWakeLock, wakeLock, handleVisibilityChange]);
+    // --- End Wake Lock Logic ---
+
 
     const instructions = recipe.instructions || [];
     const totalSteps = instructions.length;
+
+    // --- Scrolling and Navigation Logic ---
+    useEffect(() => {
+        // When the step changes, scroll the active step into view
+        stepRefs.current[step]?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center' // This centers the step in the scrollable area
+        });
+    }, [step]);
 
     const nextStep = () => {
         if (step < totalSteps - 1) {
@@ -56,24 +65,50 @@ export const CookingView = ({ recipe, onExit }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-base-100 z-50 flex flex-col p-4 sm:p-8">
-            <div className="flex justify-between items-center no-print">
-                <h2 className="text-2xl font-bold text-primary">{recipe.recipeName}</h2>
-                <button onClick={onExit} className="btn btn-error btn-sm">Exit Cooking Mode</button>
-            </div>
-
-            <div className="flex-grow flex flex-col items-center justify-center text-center p-4">
-                <p className="text-lg opacity-70 mb-4">Step {step + 1} of {totalSteps}</p>
-                <div className="text-3xl sm:text-4xl md:text-5xl font-semibold leading-relaxed">
-                    {instructions[step]}
+        <div className="fixed inset-0 bg-base-100 z-50 flex flex-col">
+            {/* --- Sticky Header --- */}
+            <header className="sticky top-0 bg-base-100/80 backdrop-blur-sm p-4 border-b border-base-300 no-print z-10">
+                <div className="max-w-4xl mx-auto flex justify-between items-center">
+                    <h2 className="text-xl sm:text-2xl font-bold text-primary truncate">{recipe.recipeName}</h2>
+                    <button onClick={onExit} className="btn btn-error btn-sm">Exit</button>
                 </div>
-            </div>
+            </header>
 
-            <div className="flex justify-between items-center w-full mt-4 no-print">
-                <button onClick={prevStep} disabled={step === 0} className="btn btn-lg">Previous</button>
-                <div className="text-sm">{step + 1} / {totalSteps}</div>
-                <button onClick={nextStep} disabled={step >= totalSteps - 1} className="btn btn-primary btn-lg">Next</button>
-            </div>
+            {/* --- Scrollable Content Area --- */}
+            <main ref={stepsContainerRef} className="flex-grow overflow-y-auto p-4 sm:p-8">
+                <div className="max-w-2xl mx-auto">
+                    <ol className="space-y-8">
+                        {instructions.map((instruction, index) => {
+                            const isCurrentStep = index === step;
+                            return (
+                                <li
+                                    key={index}
+                                    ref={el => stepRefs.current[index] = el}
+                                    className={`p-6 rounded-box transition-all duration-300 ${isCurrentStep ? 'bg-primary/10 border-2 border-primary' : 'bg-base-200'}`}
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold ${isCurrentStep ? 'bg-primary text-primary-content' : 'bg-base-300'}`}>
+                                            {index + 1}
+                                        </div>
+                                        <p className={`text-xl sm:text-2xl leading-relaxed ${isCurrentStep ? 'font-semibold' : 'opacity-70'}`}>
+                                            {instruction}
+                                        </p>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ol>
+                </div>
+            </main>
+
+            {/* --- Sticky Footer --- */}
+            <footer className="sticky bottom-0 bg-base-100/80 backdrop-blur-sm p-4 border-t border-base-300 no-print z-10">
+                <div className="max-w-4xl mx-auto flex justify-between items-center">
+                    <button onClick={prevStep} disabled={step === 0} className="btn btn-lg">Previous</button>
+                    <div className="font-semibold text-sm">{step + 1} / {totalSteps}</div>
+                    <button onClick={nextStep} disabled={step >= totalSteps - 1} className="btn btn-primary btn-lg">Next</button>
+                </div>
+            </footer>
         </div>
     );
 };
