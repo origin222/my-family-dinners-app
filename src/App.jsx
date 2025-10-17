@@ -1,4 +1,4 @@
-\import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
 
 // --- FIREBASE IMPORTS ---
@@ -303,11 +303,12 @@ const App = () => {
                 content = <PlanningView query={query} setQuery={setQuery} useFavorites={useFavorites} setUseFavorites={setUseFavorites} processPlanGeneration={processPlanGeneration} favorites={favorites} selectedFavorites={selectedFavorites} handleFavoriteSelection={handleFavoriteSelection} />; 
                 break;
             case 'review': content = planData ? <ReviewView planData={planData} mealsToRegenerate={mealsToRegenerate} regenerationConstraint={regenerationConstraint} setRegenerationConstraint={setRegenerationConstraint} processPlanGeneration={processPlanGeneration} toggleMealSelection={toggleMealSelection} handleSelectMeal={handleSelectMeal} generateShareLink={generateShareLink} handleStartOver={handleStartOver} /> : null; break;
-            case 'shopping': content = <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} />; break;
+            case 'shopping': content = <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenShoppingCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} />; break;
             case 'favorites': content = <FavoritesView favorites={favorites} deleteFavorite={deleteFavorite} loadFavorite={loadFavorite} setView={setView} />; break;
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
-            case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} /> : null; break;
+            case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} enterCookingMode={() => setView('cooking')} /> : null; break;
             case 'share': content = <ShareView sharedPlan={sharedPlan} setView={setView} />; break;
+            case 'cooking': content = detailedRecipe ? <CookingView recipe={detailedRecipe} onExit={() => setView('detail')} /> : null; break;
             default: content = ( <div className="text-center py-20 bg-base-200 rounded-box"> <p className="text-xl font-medium">Enter your preferences to start!</p> </div> );
         }
     }
@@ -315,26 +316,29 @@ const App = () => {
     return (
         <div className="min-h-screen bg-base-200 p-4 sm:p-8">
             <Toaster position="top-right" />
-            <div className="max-w-5xl mx-auto bg-base-100 rounded-box shadow-2xl p-6 sm:p-10">
-                <header className="flex justify-between items-center mb-10 border-b border-base-300 pb-4 no-print">
-                    <div className="text-left">
-                        <h1 className="text-3xl sm:text-4xl font-extrabold text-primary">Family Dinner Plans</h1>
-                        <p className="opacity-70 mt-1 text-sm sm:text-base">Plan, Shop, and Cook with Precision</p>
+            <div className={`transition-all duration-300 ${view === 'cooking' ? 'blur-sm pointer-events-none' : ''}`}>
+                <div className="max-w-5xl mx-auto bg-base-100 rounded-box shadow-2xl p-6 sm:p-10">
+                    <header className="flex justify-between items-center mb-10 border-b border-base-300 pb-4 no-print">
+                        <div className="text-left">
+                            <h1 className="text-3xl sm:text-4xl font-extrabold text-primary">Family Dinner Plans</h1>
+                            <p className="opacity-70 mt-1 text-sm sm:text-base">Plan, Shop, and Cook with Precision</p>
+                        </div>
+                        <ThemeToggle />
+                    </header>
+                    {view !== 'share' && (
+                        <div className="flex justify-center gap-8 mb-8 no-print">
+                            <button onClick={() => setView(planData ? 'review' : 'planning')} className={`btn ${['planning', 'review', 'timing', 'detail'].includes(view) ? 'btn-primary' : ''}`}>Dinner Plan</button>
+                            <button onClick={() => setView('shopping')} className={`btn ${view === 'shopping' ? 'btn-primary' : ''}`}>Shopping List</button>
+                            <button onClick={() => setView('favorites')} className={`btn ${view === 'favorites' ? 'btn-primary' : ''}`}>Favorites</button>
+                        </div>
+                    )}
+                    <div className="mt-8">
+                        {error && <div className="alert alert-error mb-4"><span>{error}</span></div>}
+                        {content}
                     </div>
-                    <ThemeToggle />
-                </header>
-                {view !== 'share' && (
-                    <div className="flex justify-center gap-8 mb-8 no-print">
-                        <button onClick={() => setView(planData ? 'review' : 'planning')} className={`btn ${['planning', 'review', 'timing', 'detail'].includes(view) ? 'btn-primary' : ''}`}>Dinner Plan</button>
-                        <button onClick={() => setView('shopping')} className={`btn ${view === 'shopping' ? 'btn-primary' : ''}`}>Shopping List</button>
-                        <button onClick={() => setView('favorites')} className={`btn ${view === 'favorites' ? 'btn-primary' : ''}`}>Favorites</button>
-                    </div>
-                )}
-                <div className="mt-8">
-                    {error && <div className="alert alert-error mb-4"><span>{error}</span></div>}
-                    {content}
                 </div>
             </div>
+            {view === 'cooking' && content}
         </div>
     );
 };
