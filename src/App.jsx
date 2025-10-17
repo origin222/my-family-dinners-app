@@ -7,9 +7,9 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 
 // --- LOCAL IMPORTS ---
-import { convertToActualTime, mergeShoppingLists, convertIngredient } from './utils/helpers';
+import { convertToActualTime, mergeShoppingLists } from './utils/helpers';
 import { ThemeToggle, PlanSkeleton } from './components/UIComponents';
-import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView } from './components/ViewComponents';
+import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView } from './components/views';
 
 // --- CONFIGURATION ---
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
@@ -17,10 +17,6 @@ const VERCEL_APP_ID = import.meta.env.VITE_APP_ID;
 const VERCEL_FIREBASE_CONFIG_STRING = import.meta.env.VITE_FIREBASE_CONFIG;
 const GEMINI_API_KEY_ENV = import.meta.env.VITE_GEMINI_API_KEY;
 const appId = VERCEL_APP_ID || 'default-app-id';
-let firebaseConfig = {};
-try {
-    if (VERCEL_FIREBASE_CONFIG_STRING) firebaseConfig = JSON.parse(VERCEL_FIREBASE_CONFIG_STRING);
-} catch (e) { console.error("Error parsing VITE_FIREBASE_CONFIG JSON:", e); }
 const finalGeminiApiKey = GEMINI_API_KEY_ENV || "";
 
 // Firestore Collection Constants
@@ -55,8 +51,8 @@ const App = () => {
     const [sharedPlan, setSharedPlan] = useState(null);
 
     const handleFavoriteSelection = useCallback((mealName) => {
-        setSelectedFavorites(prev => 
-            prev.includes(mealName) 
+        setSelectedFavorites(prev =>
+            prev.includes(mealName)
                 ? prev.filter(name => name !== mealName)
                 : [...prev, mealName]
         );
@@ -65,7 +61,7 @@ const App = () => {
     const updateShoppingList = useCallback(async (updatedList) => {
         if (!db || !userId || !planData) return;
         const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
-        try { await updateDoc(docRef, { shoppingList: updatedList }); } 
+        try { await updateDoc(docRef, { shoppingList: updatedList }); }
         catch (e) { console.error("Firestore Update Error:", e); toast.error("Could not update shopping list."); }
     }, [db, userId, planData]);
 
@@ -80,7 +76,7 @@ const App = () => {
             });
         } else {
             updateShoppingList(updatedList);
-            toast.success(`"${newItem.item}" added!`);
+            toast.success(`"${newItem.item}" added to shopping list!`);
         }
     }, [planData, updateShoppingList, db, userId]);
 
