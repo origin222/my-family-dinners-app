@@ -1,6 +1,5 @@
-// src/components/UIComponents.jsx
 import React, { useState, useEffect } from 'react';
-import { convertIngredient } from '../utils/helpers'; // FIX: Corrected path
+import { convertIngredient } from '../utils/helpers';
 
 export const ThemeToggle = () => {
     const [theme, setTheme] = useState(localStorage.getItem('theme') ? localStorage.getItem('theme') : 'cupcake');
