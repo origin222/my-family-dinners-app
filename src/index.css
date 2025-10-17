@@ -14,11 +14,12 @@
         visibility: hidden;
     }
 
-    #printable-recipe, #printable-recipe * {
+    #printable-recipe, #printable-recipe *,
+    #printable-shopping-list, #printable-shopping-list * {
         visibility: visible;
     }
 
-    #printable-recipe {
+    #printable-recipe, #printable-shopping-list {
         position: absolute;
         left: 0;
         top: 0;
@@ -32,6 +33,38 @@
         color: black !important;
         background-color: white !important;
     }
+
+    /* --- NEW: Shopping List Print Styles --- */
+    #printable-shopping-list {
+        column-count: 2;
+        column-gap: 2rem;
+    }
+    .print-list-category {
+        break-inside: avoid-column;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #ccc;
+    }
+    .print-list-item::before {
+        content: '☐';
+        margin-right: 0.75rem;
+        font-size: 1.2em;
+    }
+    .print-notes-section {
+        margin-top: 2rem;
+        border-top: 2px solid black;
+        padding-top: 1rem;
+    }
+    .print-notes-section h3 {
+        font-size: 1.25rem;
+        font-weight: bold;
+    }
+    .print-notes-section div {
+        border-bottom: 1px solid #ccc;
+        height: 1.75rem;
+        margin-top: 0.5rem;
+    }
+    /* --- End New Styles --- */
 
     /* Keep sections from splitting across pages */
     .printable-section {
