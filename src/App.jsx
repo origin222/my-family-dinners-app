@@ -66,7 +66,7 @@ const App = () => {
         const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
         try { await updateDoc(docRef, { shoppingList: updatedList }); } 
         catch (e) { console.error("Firestore Update Error:", e); toast.error("Could not update shopping list."); }
-    }, [db, userId, planData, appId]);
+    }, [db, userId, planData]);
 
     const handleAddItem = useCallback((newItem) => {
         if (!planData) return;
@@ -85,13 +85,13 @@ const App = () => {
     
     const handleSelectMeal = useCallback((index) => { setSelectedMealIndex(index); setDetailedRecipe(null); setView('timing'); }, []);
     const toggleMealSelection = useCallback((index) => { setMealsToRegenerate(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]); }, []);
-    const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId, appId]);
+    const handleStartOver = useCallback(async () => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID); try { await deleteDoc(docRef); toast.success("Plan deleted."); } catch (e) { toast.error("Could not delete plan."); } } }, [db, userId]);
     const handlePrint = useCallback(() => { window.print(); }, []);
     const handleCheckItem = useCallback((index) => { if (!planData) return; const newShoppingList = [...planData.shoppingList]; newShoppingList[index].isChecked = !newShoppingList[index].isChecked; updateShoppingList(newShoppingList); }, [planData, updateShoppingList]);
     const handleClearChecked = useCallback(() => { if (!planData) return; const uncheckedList = planData.shoppingList.filter(item => !item.isChecked); updateShoppingList(uncheckedList); toast.success('Checked items cleared!'); }, [planData, updateShoppingList]);
-    const loadFavorite = useCallback(async (favorite) => { setDetailedRecipe(favorite); setDinnerTime(favorite.dinnerTime || '19:00'); setView('detail'); if (favorite.id) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favorite.id); try { await updateDoc(docRef, { lastUsed: new Date().toISOString() }); } catch (e) { console.error("Error updating lastUsed timestamp:", e); } } }, [db, userId, appId]);
-    const deleteFavorite = useCallback(async (id, name) => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id); try { await deleteDoc(docRef); toast.success(`"${name}" deleted.`); } catch (e) { toast.error("Failed to delete."); } } }, [db, userId, appId]);
-    const generateShareLink = useCallback(async () => { if (!db || !userId || !planData) return; const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId); const publicPlanData = { weeklyPlan: planData.weeklyPlan, initialQuery: planData.initialQuery, userId: userId, userName: "A Friend", sharedAt: new Date().toISOString(), }; try { await setDoc(shareDocRef, publicPlanData); const url = `${window.location.origin}/share/${userId}`; toast((t) => ( <div className="flex flex-col gap-2"> <span className="text-sm font-semibold">Shareable link!</span> <div className="flex gap-2"> <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" /> <button className="btn btn-sm btn-primary" onClick={() => { navigator.clipboard.writeText(url); toast.success('Copied!', { id: t.id }); }}>Copy</button> </div> </div> ), { duration: 6000 }); } catch (e) { toast.error("Failed to generate link."); } }, [db, userId, planData, appId]);
+    const loadFavorite = useCallback(async (favorite) => { setDetailedRecipe(favorite); setDinnerTime(favorite.dinnerTime || '19:00'); setView('detail'); if (favorite.id) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, favorite.id); try { await updateDoc(docRef, { lastUsed: new Date().toISOString() }); } catch (e) { console.error("Error updating lastUsed timestamp:", e); } } }, [db, userId]);
+    const deleteFavorite = useCallback(async (id, name) => { if (!db || !userId) return; if (window.confirm("Are you sure?")) { const docRef = doc(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME, id); try { await deleteDoc(docRef); toast.success(`"${name}" deleted.`); } catch (e) { toast.error("Failed to delete."); } } }, [db, userId]);
+    const generateShareLink = useCallback(async () => { if (!db || !userId || !planData) return; const shareDocRef = doc(db, 'artifacts', appId, SHARED_PLANS_COLLECTION_NAME, userId); const publicPlanData = { weeklyPlan: planData.weeklyPlan, initialQuery: planData.initialQuery, userId: userId, userName: "A Friend", sharedAt: new Date().toISOString(), }; try { await setDoc(shareDocRef, publicPlanData); const url = `${window.location.origin}/share/${userId}`; toast((t) => ( <div className="flex flex-col gap-2"> <span className="text-sm font-semibold">Shareable link!</span> <div className="flex gap-2"> <input type="text" value={url} readOnly className="input input-bordered input-sm w-full" /> <button className="btn btn-sm btn-primary" onClick={() => { navigator.clipboard.writeText(url); toast.success('Copied!', { id: t.id }); }}>Copy</button> </div> </div> ), { duration: 6000 }); } catch (e) { toast.error("Failed to generate link."); } }, [db, userId, planData]);
 
     const handleToggleFavorite = useCallback(() => {
         if (!detailedRecipe || !db || !userId) return;
@@ -105,7 +105,7 @@ const App = () => {
                 .then(() => toast.success(`"${detailedRecipe.recipeName}" saved to favorites!`))
                 .catch(() => toast.error("Failed to save favorite."));
         }
-    }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, appId, deleteFavorite]);
+    }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, deleteFavorite]);
 
     const retryFetch = useCallback(async (url, options, maxRetries = 5) => { /* ... */ }, []);
     
@@ -163,9 +163,61 @@ const App = () => {
 
     const generateRecipeDetail = useCallback(async () => { /* ... */ }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
     
-    useEffect(() => { /* ... Firebase Init ... */ }, []);
-    useEffect(() => { /* ... PlanData Listener ... */ }, [db, userId, isAuthReady]);
-    useEffect(() => { /* ... Favorites Listener ... */ }, [db, userId, isAuthReady]);
+    useEffect(() => {
+        const configString = import.meta.env.VITE_FIREBASE_CONFIG;
+        if (!configString) {
+            setError("Firebase config is missing. Check Vercel environment variables.");
+            return;
+        };
+        try {
+            const firebaseConfig = JSON.parse(configString);
+            const app = initializeApp(firebaseConfig);
+            const authInstance = getAuth(app);
+            const dbInstance = getFirestore(app);
+            setDb(dbInstance);
+            setIsFirebaseInitialized(true);
+
+            const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
+                if (user) { setUserId(user.uid); } 
+                else { await signInAnonymously(authInstance); setUserId(authInstance.currentUser?.uid || crypto.randomUUID()); }
+                setIsAuthReady(true);
+            });
+            return () => unsubscribe();
+        } catch (e) { console.error("Firebase Initialization Error:", e); setError(`Failed to initialize Firebase: ${e.message}`); }
+    }, []);
+
+    useEffect(() => {
+        if (!db || !userId || !isAuthReady) return;
+        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
+        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setPlanData(data);
+                setView(currentView => {
+                    if (!['shopping', 'timing', 'detail', 'favorites', 'public'].includes(currentView)) {
+                        return 'review';
+                    }
+                    return currentView;
+                });
+                if (!query) setQuery(data.initialQuery || '');
+            } else {
+                setPlanData(null);
+                setView('planning');
+                setDetailedRecipe(null);
+            }
+        }, (e) => { console.error("Firestore Snapshot Error:", e); setError("Could not connect to the database."); });
+        return () => unsubscribe();
+    }, [db, userId, isAuthReady]);
+
+    useEffect(() => {
+        if (!db || !userId || !isAuthReady) return;
+        const favoritesCollectionRef = collection(db, 'artifacts', appId, 'users', userId, FAVORITES_COLLECTION_NAME);
+        const unsubscribe = onSnapshot(favoritesCollectionRef, (snapshot) => {
+            const favoriteList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setFavorites(favoriteList);
+        }, (e) => { console.error("Favorites Snapshot Error:", e); setError("Could not load saved favorites."); });
+        return () => unsubscribe();
+    }, [db, userId, isAuthReady]);
     
     let content;
     const isConnecting = !isFirebaseInitialized || !isAuthReady;
