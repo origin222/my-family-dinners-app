@@ -7,10 +7,9 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 
 // --- LOCAL IMPORTS ---
-import { convertToActualTime, mergeShoppingLists, convertIngredient } from './utils/helpers';
+import { convertToActualTime, mergeShoppingLists } from './utils/helpers';
 import { ThemeToggle, PlanSkeleton } from './components/UIComponents';
 import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView } from './components/views';
-
 
 // --- CONFIGURATION ---
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
@@ -18,10 +17,6 @@ const VERCEL_APP_ID = import.meta.env.VITE_APP_ID;
 const VERCEL_FIREBASE_CONFIG_STRING = import.meta.env.VITE_FIREBASE_CONFIG;
 const GEMINI_API_KEY_ENV = import.meta.env.VITE_GEMINI_API_KEY;
 const appId = VERCEL_APP_ID || 'default-app-id';
-let firebaseConfig = {};
-try {
-    if (VERCEL_FIREBASE_CONFIG_STRING) firebaseConfig = JSON.parse(VERCEL_FIREBASE_CONFIG_STRING);
-} catch (e) { console.error("Error parsing VITE_FIREBASE_CONFIG JSON:", e); }
 const finalGeminiApiKey = GEMINI_API_KEY_ENV || "";
 
 // Firestore Collection Constants
@@ -32,6 +27,7 @@ const SHARED_PLANS_COLLECTION_NAME = 'public/data/shared_plans';
 // --- JSON SCHEMAS ---
 const PLAN_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "weeklyPlan": { type: "ARRAY", items: { type: "OBJECT", properties: { "day": { "type": "STRING" }, "meal": { "type": "STRING" }, "description": { "type": "STRING" }, "calories": { "type": "NUMBER" }, "protein": { "type": "NUMBER" }, "carbs": { "type": "NUMBER" }, "fats": { "type": "NUMBER" } } } }, "shoppingList": { type: "ARRAY", items: { type: "OBJECT", properties: { "item": { "type": "STRING" }, "quantity": { "type": "STRING" }, "category": { "type": "STRING" }, "isChecked": { "type": "BOOLEAN" } } } } } };
 const RECIPE_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "recipeName": { "type": "STRING" }, "prepTimeMinutes": { "type": "NUMBER" }, "cookTimeMinutes": { "type": "NUMBER" }, "ingredients": { "type": "ARRAY", "items": { "type": "STRING" } }, "timeline": { type: "ARRAY", items: { "type": "OBJECT", "properties": { "minutesBefore": { "type": "NUMBER" }, "action": { "type": "STRING" } } } }, "instructions": { "type": "ARRAY", "items": { "type": "STRING" } } } };
+
 // --- MAIN APP COMPONENT ---
 const App = () => {
     const [db, setDb] = useState(null);
@@ -65,7 +61,6 @@ const App = () => {
     const updateShoppingList = useCallback(async (updatedList) => {
         if (!db || !userId) return;
         const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
-        // If a plan exists, update it. If not, create it with the new list.
         if (planData) {
             try { await updateDoc(docRef, { shoppingList: updatedList }); } 
             catch (e) { console.error("Firestore Update Error:", e); toast.error("Could not update shopping list."); }
@@ -308,7 +303,7 @@ const App = () => {
                 content = <PlanningView query={query} setQuery={setQuery} useFavorites={useFavorites} setUseFavorites={setUseFavorites} processPlanGeneration={processPlanGeneration} favorites={favorites} selectedFavorites={selectedFavorites} handleFavoriteSelection={handleFavoriteSelection} />; 
                 break;
             case 'review': content = planData ? <ReviewView planData={planData} mealsToRegenerate={mealsToRegenerate} regenerationConstraint={regenerationConstraint} setRegenerationConstraint={setRegenerationConstraint} processPlanGeneration={processPlanGeneration} toggleMealSelection={toggleMealSelection} handleSelectMeal={handleSelectMeal} generateShareLink={generateShareLink} handleStartOver={handleStartOver} /> : null; break;
-            case 'shopping': content = planData || view === 'shopping' ? <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} /> : null; break;
+            case 'shopping': content = <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} />; break;
             case 'favorites': content = <FavoritesView favorites={favorites} deleteFavorite={deleteFavorite} loadFavorite={loadFavorite} setView={setView} />; break;
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
             case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} /> : null; break;
