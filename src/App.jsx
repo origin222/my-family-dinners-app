@@ -11,6 +11,7 @@ import { convertToActualTime, mergeShoppingLists, convertIngredient } from './ut
 import { ThemeToggle, PlanSkeleton } from './components/UIComponents';
 import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView } from './components/ViewComponents';
 
+
 // --- CONFIGURATION ---
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
 const VERCEL_APP_ID = import.meta.env.VITE_APP_ID;
@@ -29,9 +30,8 @@ const FAVORITES_COLLECTION_NAME = 'favorites';
 const SHARED_PLANS_COLLECTION_NAME = 'public/data/shared_plans';
 
 // --- JSON SCHEMAS ---
-const PLAN_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "weeklyPlan": { type: "ARRAY", items: { type: "OBJECT", properties: { "day": { "type": "STRING" }, "meal": { "type": "STRING" }, "description": { "type": "STRING" }, "calories": { "type": "STRING" }, "protein": { "type": "STRING" }, "carbs": { "type": "STRING" }, "fats": { "type": "STRING" } } } }, "shoppingList": { type: "ARRAY", items: { type: "OBJECT", properties: { "item": { "type": "STRING" }, "quantity": { "type": "STRING" }, "category": { "type": "STRING" }, "isChecked": { "type": "BOOLEAN" } } } } } };
+const PLAN_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "weeklyPlan": { type: "ARRAY", items: { type: "OBJECT", properties: { "day": { "type": "STRING" }, "meal": { "type": "STRING" }, "description": { "type": "STRING" }, "calories": { "type": "NUMBER" }, "protein": { "type": "NUMBER" }, "carbs": { "type": "NUMBER" }, "fats": { "type": "NUMBER" } } } }, "shoppingList": { type: "ARRAY", items: { type: "OBJECT", properties: { "item": { "type": "STRING" }, "quantity": { "type": "STRING" }, "category": { "type": "STRING" }, "isChecked": { "type": "BOOLEAN" } } } } } };
 const RECIPE_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "recipeName": { "type": "STRING" }, "prepTimeMinutes": { "type": "NUMBER" }, "cookTimeMinutes": { "type": "NUMBER" }, "ingredients": { "type": "ARRAY", "items": { "type": "STRING" } }, "timeline": { type: "ARRAY", items: { "type": "OBJECT", "properties": { "minutesBefore": { "type": "NUMBER" }, "action": { "type": "STRING" } } } }, "instructions": { "type": "ARRAY", "items": { "type": "STRING" } } } };
-
 // --- MAIN APP COMPONENT ---
 const App = () => {
     const [db, setDb] = useState(null);
@@ -107,7 +107,28 @@ const App = () => {
         }
     }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, deleteFavorite]);
 
-    const retryFetch = useCallback(async (url, options, maxRetries = 5) => { /* ... */ }, []);
+    const retryFetch = useCallback(async (url, options, maxRetries = 3) => {
+        let lastError;
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                const response = await fetch(url, options);
+                // If status is not a server error or rate limit, stop retrying.
+                // This includes success (2xx) and client errors (4xx).
+                if (response.status < 500 && response.status !== 429) {
+                    return response;
+                }
+                lastError = new Error(`API request failed with status ${response.status}`);
+            } catch (error) {
+                lastError = error; // Catches network errors
+            }
+            if (i === maxRetries - 1) {
+                throw lastError;
+            }
+            const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+        throw new Error("Exhausted retries without a conclusive response or error.");
+    }, []);
     
     const processPlanGeneration = useCallback(async (isRegeneration = false) => {
         if (!db || !userId) { toast.error("Not connected to the database. Please refresh."); return; }
@@ -118,7 +139,7 @@ const App = () => {
         const oldPlan = planData;
         let systemPrompt;
         let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list.";
-        const macroInstruction = "For each meal, you MUST provide an estimated nutritional breakdown including 'calories', 'protein', 'carbs', and 'fats'.";
+        const macroInstruction = "For each meal, you MUST provide an estimated nutritional breakdown PER SERVING including 'calories', 'protein', 'carbs', and 'fats' as numbers. Infer serving size from user query.";
         let favoritesInstruction = '';
         if (useFavorites && selectedFavorites.length > 0) {
             const favoriteMealsStr = selectedFavorites.join(', ');
@@ -162,8 +183,7 @@ const App = () => {
     }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch, favorites, useFavorites, selectedFavorites]);
 
     const generateRecipeDetail = useCallback(async () => { /* ... */ }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
-    
-    useEffect(() => {
+	useEffect(() => {
         const configString = import.meta.env.VITE_FIREBASE_CONFIG;
         if (!configString) {
             setError("Firebase config is missing. Check Vercel environment variables.");
