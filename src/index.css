@@ -4,6 +4,11 @@
 
 /* --- PRINTER-FRIENDLY STYLES --- */
 @media print {
+    /* --- NEW: Add margins to the printed page itself --- */
+    @page {
+        margin: 0.75in;
+    }
+
     /* Hide all non-essential UI elements */
     .no-print {
         display: none !important;
@@ -24,7 +29,6 @@
         left: 0;
         top: 0;
         width: 100%;
-        padding: 1rem;
         color: black;
     }
 
@@ -34,16 +38,19 @@
         background-color: white !important;
     }
 
-    /* --- NEW: Shopping List Print Styles --- */
+    /* --- UPDATED: Shopping List Print Styles --- */
     #printable-shopping-list {
         column-count: 2;
         column-gap: 2rem;
     }
     .print-list-category {
-        break-inside: avoid-column;
+        break-inside: avoid; /* More robust instruction to avoid breaking */
         margin-top: 1rem;
         padding-top: 1rem;
         border-top: 1px solid #ccc;
+    }
+    .print-list-item {
+        break-inside: avoid; /* Prevent individual items from splitting */
     }
     .print-list-item::before {
         content: '☐';
@@ -65,7 +72,7 @@
         height: 1.75rem;
         margin-top: 0.5rem;
     }
-    /* --- End New Styles --- */
+    /* --- End Updated Styles --- */
 
     /* Keep sections from splitting across pages */
     .printable-section {
