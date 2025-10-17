@@ -107,7 +107,7 @@ const App = () => {
         }
     }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, deleteFavorite]);
 
-    const retryFetch = useCallback(async (url, options, maxRetries = 5) => { /* ... */ }, []);
+    const retryFetch = useCallback(async (url, options, maxRetries = 5) => { for (let i = 0; i < maxRetries; i++) { try { const response = await fetch(url, options); if (response.status !== 429 && response.status < 500) { return response; } if (i === maxRetries - 1) throw new Error(`API returned status ${response.status}`); const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } catch (error) { if (i === maxRetries - 1) throw error; const delay = Math.pow(2, i) * 1000 + Math.random() * 1000; await new Promise(resolve => setTimeout(resolve, delay)); } } }, []);
     
     const processPlanGeneration = useCallback(async (isRegeneration = false) => {
         if (!db || !userId) { toast.error("Not connected to the database. Please refresh."); return; }
@@ -161,8 +161,40 @@ const App = () => {
         }
     }, [db, userId, query, planData, mealsToRegenerate, regenerationConstraint, retryFetch, favorites, useFavorites, selectedFavorites]);
 
-    const generateRecipeDetail = useCallback(async () => { /* ... */ }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
-    
+    const generateRecipeDetail = useCallback(async () => {
+        if (!db || !userId) { toast.error("Not connected. Please refresh."); return; }
+        if (isLoading) return;
+        if (selectedMealIndex === null || !planData) { toast.error("Please select a meal first."); return; }
+        setIsLoading(true);
+        setError(null);
+        const meal = planData.weeklyPlan[selectedMealIndex];
+        const targetTime = convertToActualTime(dinnerTime, 0);
+        const detailQuery = `Generate a full recipe for "${meal.meal}" based on: "${meal.description}". The meal must be ready at ${targetTime}. Provide a timeline using 'minutesBefore' (e.g., 60, 45, 10).`;
+        const systemPrompt = "You are a chef. Provide precise recipe details and a reverse-engineered cooking timeline.";
+        try {
+            const payload = { contents: [{ parts: [{ text: detailQuery }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", responseSchema: RECIPE_RESPONSE_SCHEMA } };
+            const url = `${API_URL}?key=${finalGeminiApiKey}`;
+            const response = await retryFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) {
+                const errorBody = await response.json();
+                const errorMessage = errorBody?.error?.message || response.statusText;
+                throw new Error(errorMessage);
+            }
+            const result = await response.json();
+            const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!jsonString) { throw new Error("AI response was empty."); }
+            const parsedRecipe = JSON.parse(jsonString);
+            parsedRecipe.dinnerTime = dinnerTime;
+            setDetailedRecipe(parsedRecipe);
+            setView('detail');
+        } catch (e) {
+            console.error("Recipe Generation Error:", e);
+            toast.error(`Failed to generate recipe: ${e.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [db, userId, planData, selectedMealIndex, dinnerTime, retryFetch]);
+
     useEffect(() => {
         const configString = import.meta.env.VITE_FIREBASE_CONFIG;
         if (!configString) {
