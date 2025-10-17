@@ -17,6 +17,10 @@ const VERCEL_APP_ID = import.meta.env.VITE_APP_ID;
 const VERCEL_FIREBASE_CONFIG_STRING = import.meta.env.VITE_FIREBASE_CONFIG;
 const GEMINI_API_KEY_ENV = import.meta.env.VITE_GEMINI_API_KEY;
 const appId = VERCEL_APP_ID || 'default-app-id';
+let firebaseConfig = {};
+try {
+    if (VERCEL_FIREBASE_CONFIG_STRING) firebaseConfig = JSON.parse(VERCEL_FIREBASE_CONFIG_STRING);
+} catch (e) { console.error("Error parsing VITE_FIREBASE_CONFIG JSON:", e); }
 const finalGeminiApiKey = GEMINI_API_KEY_ENV || "";
 
 // Firestore Collection Constants
@@ -66,16 +70,17 @@ const App = () => {
     }, [db, userId, planData]);
 
     const handleAddItem = useCallback((newItem) => {
+        const currentList = planData ? planData.shoppingList : [];
+        const updatedList = [...currentList, newItem];
         if (!planData) {
-            const newPlan = { weeklyPlan: [], shoppingList: [newItem], initialQuery: 'Manual Additions' };
+            const newPlan = { weeklyPlan: [], shoppingList: updatedList, initialQuery: 'Manual Additions' };
             const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
             setDoc(docRef, newPlan).then(() => {
                 toast.success(`"${newItem.item}" added!`);
             });
         } else {
-            const updatedList = [...planData.shoppingList, newItem];
             updateShoppingList(updatedList);
-            toast.success(`"${newItem.item}" added to shopping list!`);
+            toast.success(`"${newItem.item}" added!`);
         }
     }, [planData, updateShoppingList, db, userId]);
 
@@ -305,7 +310,7 @@ const App = () => {
                 content = <PlanningView query={query} setQuery={setQuery} useFavorites={useFavorites} setUseFavorites={setUseFavorites} processPlanGeneration={processPlanGeneration} favorites={favorites} selectedFavorites={selectedFavorites} handleFavoriteSelection={handleFavoriteSelection} />; 
                 break;
             case 'review': content = planData ? <ReviewView planData={planData} mealsToRegenerate={mealsToRegenerate} regenerationConstraint={regenerationConstraint} setRegenerationConstraint={setRegenerationConstraint} processPlanGeneration={processPlanGeneration} toggleMealSelection={toggleMealSelection} handleSelectMeal={handleSelectMeal} generateShareLink={generateShareLink} handleStartOver={handleStartOver} /> : null; break;
-            case 'shopping': content = planData ? <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} /> : null; break;
+            case 'shopping': content = <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} />; break;
             case 'favorites': content = <FavoritesView favorites={favorites} deleteFavorite={deleteFavorite} loadFavorite={loadFavorite} setView={setView} />; break;
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
             case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} /> : null; break;
@@ -325,11 +330,11 @@ const App = () => {
                     </div>
                     <ThemeToggle />
                 </header>
-                {planData && view !== 'share' && (
+                {view !== 'share' && (
                     <div className="flex justify-center gap-8 mb-8 no-print">
                         <button onClick={() => setView('review')} disabled={!planData} className={`btn ${['review', 'timing', 'detail'].includes(view) ? 'btn-primary' : ''}`}>Dinner Plan</button>
-                        <button onClick={() => setView('shopping')} disabled={!planData} className={`btn ${view === 'shopping' ? 'btn-primary' : ''}`}>Shopping List</button>
-                        <button onClick={() => setView('favorites')} disabled={!planData} className={`btn ${view === 'favorites' ? 'btn-primary' : ''}`}>Favorites</button>
+                        <button onClick={() => setView('shopping')} className={`btn ${view === 'shopping' ? 'btn-primary' : ''}`}>Shopping List</button>
+                        <button onClick={() => setView('favorites')} className={`btn ${view === 'favorites' ? 'btn-primary' : ''}`}>Favorites</button>
                     </div>
                 )}
                 <div className="mt-8">

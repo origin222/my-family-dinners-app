@@ -54,6 +54,7 @@
         margin-top: 2rem;
         border-top: 2px solid black;
         padding-top: 1rem;
+        break-before: column; /* Ensure notes start in a new column if needed */
     }
     .print-notes-section h3 {
         font-size: 1.25rem;
