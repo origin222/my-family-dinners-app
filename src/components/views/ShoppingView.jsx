@@ -38,19 +38,16 @@ export const ShoppingView = ({ planData, handleClearChecked, handleCheckItem, op
 
     return (
         <div>
-            {/* --- UI FIX: Restructured header for better button placement --- */}
             <div className="flex justify-between items-center mb-4">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-3xl font-bold">Grocery Shopping List</h2>
-                    {planData?.shoppingList?.length > 0 && (
-                        <button onClick={handlePrint} className="btn btn-ghost btn-sm no-print">
+                <h2 className="text-3xl font-bold">Grocery Shopping List</h2>
+                {planData?.shoppingList?.length > 0 && (
+                    <div className="flex items-center gap-2 no-print">
+                        <button onClick={handlePrint} className="btn btn-ghost btn-sm">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03-.48.062-.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.662 0 1.18.568 1.12 1.227l-.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m0 0h11.32z" /></svg>
                             Print
                         </button>
-                    )}
-                </div>
-                {planData?.shoppingList?.length > 0 && (
-                    <button onClick={handleClearChecked} disabled={!planData?.shoppingList?.some(i => i.isChecked)} className="btn btn-error btn-sm no-print">Clear Checked</button>
+                        <button onClick={handleClearChecked} disabled={!planData?.shoppingList?.some(i => i.isChecked)} className="btn btn-error btn-sm">Clear Checked</button>
+                    </div>
                 )}
             </div>
 

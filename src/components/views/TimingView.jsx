@@ -8,6 +8,8 @@ export const TimingView = ({ meal, dinnerTime, setDinnerTime, generateRecipeDeta
             <label className="label"><span className="label-text">What time is dinner?</span></label>
             <input type="time" value={dinnerTime} onChange={(e) => setDinnerTime(e.target.value)} step="300" className="input input-bordered text-center text-2xl font-mono" />
         </div>
-        <button onClick={generateRecipeDetail} disabled={isLoading} className="btn btn-success mt-6 w-full max-w-xs">Generate Timeline & Recipe</button>
+        <button onClick={generateRecipeDetail} disabled={isLoading} className="btn btn-success mt-6 w-full max-w-xs">
+            Generate Timeline & Recipe
+        </button>
     </div>
 );

@@ -7,7 +7,6 @@ export const DetailView = ({ detailedRecipe, favorites, handleToggleFavorite, ha
     const { recipeName, prepTimeMinutes, cookTimeMinutes, ingredients, timeline, instructions, dinnerTime } = detailedRecipe;
     const targetTimeDisplay = convertToActualTime(dinnerTime, 0);
     const isFavorite = favorites.some(fav => fav.recipeName === recipeName);
-
     return (
         <div id="printable-recipe">
             <header className="text-center border-b border-base-300 pb-4">
@@ -15,7 +14,6 @@ export const DetailView = ({ detailedRecipe, favorites, handleToggleFavorite, ha
                 <p className="text-xl text-success mt-2 font-medium">Dinner Ready At: {targetTimeDisplay}</p>
                 <p className="opacity-70 mt-1">Prep: {prepTimeMinutes} mins | Cook: {cookTimeMinutes} mins</p>
                 
-                {/* --- FEATURE: "Start Cooking" Button --- */}
                 <div className="mt-6 no-print">
                     <button onClick={enterCookingMode} className="btn btn-lg btn-accent gap-3">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">

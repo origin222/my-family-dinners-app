@@ -2,12 +2,7 @@ import React from 'react';
 
 export const ShareView = ({ sharedPlan, setView }) => {
     if (!sharedPlan) {
-        return (
-            <div className="text-center py-20">
-                <span className="loading loading-spinner loading-lg"></span>
-                <p className="mt-4">Loading shared plan...</p>
-            </div>
-        );
+        return <div className="text-center py-20"><span className="loading loading-spinner loading-lg"></span><p>Loading shared plan...</p></div>;
     }
 
     return (
@@ -27,15 +22,7 @@ export const ShareView = ({ sharedPlan, setView }) => {
                     </div>
                 ))}
             </div>
-            <button
-                onClick={() => {
-                    setView('planning');
-                    window.history.pushState({}, '', '/');
-                }}
-                className="btn btn-primary w-full mt-8"
-            >
-                Create Your Own Plan
-            </button>
+            <button onClick={() => { setView('planning'); window.history.pushState({}, '', '/'); }} className="btn btn-primary w-full mt-8">Create Your Own Plan</button>
         </div>
     );
 };

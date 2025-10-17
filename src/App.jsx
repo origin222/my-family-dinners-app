@@ -7,9 +7,9 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 
 // --- LOCAL IMPORTS ---
-import { convertToActualTime, mergeShoppingLists, convertIngredient } from './utils/helpers';
+import { convertToActualTime, mergeShoppingLists } from './utils/helpers';
 import { ThemeToggle, PlanSkeleton } from './components/UIComponents';
-import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView } from './components/views';
+import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView, CookingView } from './components/views';
 
 // --- CONFIGURATION ---
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
@@ -144,7 +144,7 @@ const App = () => {
         const oldPlan = planData;
         let systemPrompt;
         let userPrompt = "Generate the complete weekly dinner plan and consolidated shopping list.";
-        const macroInstruction = "For each meal, you MUST provide an estimated nutritional breakdown PER SERVING including 'calories', 'protein', 'carbs', and 'fats' as numbers. Infer serving size from user query.";
+        const macroInstruction = "For each meal, you MUST provide an estimated nutritional breakdown PER SERVING including 'calories', 'protein', 'carbs', and 'fats' as numbers. Infer serving size from user query. Each 'meal' MUST be a specific, creative name (e.g., 'Sheet Pan Lemon Herb Chicken'), not a generic placeholder like 'Dinner' or 'Leftovers'.";
         let favoritesInstruction = '';
         if (useFavorites && selectedFavorites.length > 0) {
             const favoriteMealsStr = selectedFavorites.join(', ');
@@ -300,7 +300,7 @@ const App = () => {
     if (isConnecting && !error) {
         content = ( <div className="text-center py-20"> <span className="loading loading-spinner loading-lg text-primary"></span> <p className="mt-4 font-semibold">Connecting...</p> </div> );
     } else if (isLoading) {
-        content = view === 'planning' || view === 'review' ? <PlanSkeleton /> : <div className="text-center py-20"><span className="loading loading-dots loading-lg text-primary"></span></div>;
+        content = <PlanSkeleton />;
     } else {
         switch (view) {
             case 'planning': 
@@ -312,7 +312,6 @@ const App = () => {
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
             case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} enterCookingMode={enterCookingMode} /> : null; break;
             case 'share': content = <ShareView sharedPlan={sharedPlan} setView={setView} />; break;
-            case 'cooking': content = detailedRecipe ? <CookingView recipe={detailedRecipe} onExit={exitCookingMode} /> : null; break;
             default: content = ( <div className="text-center py-20 bg-base-200 rounded-box"> <p className="text-xl font-medium">Enter your preferences to start!</p> </div> );
         }
     }

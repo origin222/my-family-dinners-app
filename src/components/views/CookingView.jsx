@@ -3,17 +3,15 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 export const CookingView = ({ recipe, onExit }) => {
     const [step, setStep] = useState(0);
     const [wakeLock, setWakeLock] = useState(null);
-    const stepsContainerRef = useRef(null); // Ref for the scrolling container
-    const stepRefs = useRef([]); // Ref for individual step elements
+    const stepRefs = useRef([]);
 
-    // --- Screen Wake Lock Logic (Unchanged) ---
+    // --- Screen Wake Lock Logic ---
     const acquireWakeLock = useCallback(async () => {
         if ('wakeLock' in navigator) {
             try {
                 const lock = await navigator.wakeLock.request('screen');
                 setWakeLock(lock);
                 console.log('Screen Wake Lock is active.');
-                document.addEventListener('visibilitychange', handleVisibilityChange);
             } catch (err) {
                 console.error(`${err.name}, ${err.message}`);
             }
@@ -21,34 +19,34 @@ export const CookingView = ({ recipe, onExit }) => {
     }, []);
 
     const handleVisibilityChange = useCallback(() => {
-        if (wakeLock !== null && document.visibilityState === 'visible') {
+        if (document.visibilityState === 'visible') {
             acquireWakeLock();
         }
-    }, [wakeLock, acquireWakeLock]);
+    }, [acquireWakeLock]);
 
     useEffect(() => {
         acquireWakeLock();
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
         return () => {
-            if (wakeLock !== null) {
-                wakeLock.release();
-                setWakeLock(null);
-                document.removeEventListener('visibilitychange', handleVisibilityChange);
-                console.log('Screen Wake Lock released.');
+            if (wakeLock !== null && wakeLock.released === false) {
+                wakeLock.release().then(() => {
+                    setWakeLock(null);
+                    console.log('Screen Wake Lock released.');
+                });
             }
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [acquireWakeLock, wakeLock, handleVisibilityChange]);
     // --- End Wake Lock Logic ---
 
-
     const instructions = recipe.instructions || [];
     const totalSteps = instructions.length;
 
-    // --- Scrolling and Navigation Logic ---
     useEffect(() => {
-        // When the step changes, scroll the active step into view
         stepRefs.current[step]?.scrollIntoView({
             behavior: 'smooth',
-            block: 'center' // This centers the step in the scrollable area
+            block: 'center'
         });
     }, [step]);
 
@@ -66,7 +64,6 @@ export const CookingView = ({ recipe, onExit }) => {
 
     return (
         <div className="fixed inset-0 bg-base-100 z-50 flex flex-col">
-            {/* --- Sticky Header --- */}
             <header className="sticky top-0 bg-base-100/80 backdrop-blur-sm p-4 border-b border-base-300 no-print z-10">
                 <div className="max-w-4xl mx-auto flex justify-between items-center">
                     <h2 className="text-xl sm:text-2xl font-bold text-primary truncate">{recipe.recipeName}</h2>
@@ -74,8 +71,7 @@ export const CookingView = ({ recipe, onExit }) => {
                 </div>
             </header>
 
-            {/* --- Scrollable Content Area --- */}
-            <main ref={stepsContainerRef} className="flex-grow overflow-y-auto p-4 sm:p-8">
+            <main className="flex-grow overflow-y-auto p-4 sm:p-8">
                 <div className="max-w-2xl mx-auto">
                     <ol className="space-y-8">
                         {instructions.map((instruction, index) => {
@@ -101,7 +97,6 @@ export const CookingView = ({ recipe, onExit }) => {
                 </div>
             </main>
 
-            {/* --- Sticky Footer --- */}
             <footer className="sticky bottom-0 bg-base-100/80 backdrop-blur-sm p-4 border-t border-base-300 no-print z-10">
                 <div className="max-w-4xl mx-auto flex justify-between items-center">
                     <button onClick={prevStep} disabled={step === 0} className="btn btn-lg">Previous</button>
