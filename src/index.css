@@ -4,12 +4,14 @@
 
 /* --- PRINTER-FRIENDLY STYLES --- */
 @media print {
-    /* Hide all non-essential UI elements */
+    @page {
+        margin: 0.75in;
+    }
+
     .no-print {
         display: none !important;
     }
 
-    /* Reset the page layout for printing */
     body * {
         visibility: hidden;
     }
@@ -24,26 +26,30 @@
         left: 0;
         top: 0;
         width: 100%;
-        padding: 1rem;
         color: black;
     }
 
-    /* Force all text and backgrounds to a simple format */
     h1, h2, h3, h4, p, li, span, div {
         color: black !important;
         background-color: white !important;
     }
 
-    /* --- NEW: Shopping List Print Styles --- */
+    /* --- CORRECTED: Shopping List Print Styles using Flexbox --- */
     #printable-shopping-list {
-        column-count: 2;
-        column-gap: 2rem;
+        display: flex;
+        flex-direction: column; /* Lay out categories top-to-bottom */
+        flex-wrap: wrap;       /* Wrap to a new column when height is full */
+        height: 90vh;          /* Define the height of a "page" to trigger wrapping */
+        gap: 0 2rem;           /* Add a gap between columns */
     }
     .print-list-category {
-        break-inside: avoid-column;
+        break-inside: avoid;   /* Prevent a category from splitting across columns */
         margin-top: 1rem;
         padding-top: 1rem;
         border-top: 1px solid #ccc;
+    }
+    .print-list-item {
+        break-inside: avoid; /* Prevent individual items from splitting */
     }
     .print-list-item::before {
         content: '☐';
@@ -54,7 +60,7 @@
         margin-top: 2rem;
         border-top: 2px solid black;
         padding-top: 1rem;
-        break-before: column; /* Ensure notes start in a new column if needed */
+        break-before: column;
     }
     .print-notes-section h3 {
         font-size: 1.25rem;
@@ -65,26 +71,15 @@
         height: 1.75rem;
         margin-top: 0.5rem;
     }
-    /* --- End New Styles --- */
+    /* --- End Corrected Styles --- */
 
-    /* Keep sections from splitting across pages */
     .printable-section {
         page-break-inside: avoid !important;
         padding-top: 1rem;
     }
 
-    /* Fix the DaisyUI "steps" component for printing */
-    .steps .step {
-        color: black !important;
-    }
-    .steps .step:before, .steps .step:after {
-        background-color: #ccc !important;
-    }
-    .steps .step-primary:after {
-        background-color: black !important;
-    }
-    .steps .step-primary[data-content]:before {
-        background-color: black !important;
-        color: white !important;
-    }
+    .steps .step { color: black !important; }
+    .steps .step:before, .steps .step:after { background-color: #ccc !important; }
+    .steps .step-primary:after { background-color: black !important; }
+    .steps .step-primary[data-content]:before { background-color: black !important; color: white !important; }
 }
