@@ -7,7 +7,7 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
 
 // --- LOCAL IMPORTS ---
-import { convertToActualTime, mergeShoppingLists } from './utils/helpers';
+import { convertToActualTime, mergeShoppingLists, convertIngredient } from './utils/helpers';
 import { ThemeToggle, PlanSkeleton } from './components/UIComponents';
 import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView } from './components/ViewComponents';
 
