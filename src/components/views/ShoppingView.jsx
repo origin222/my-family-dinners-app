@@ -8,6 +8,7 @@ export const ShoppingView = ({ planData, handleClearChecked, handleCheckItem, op
 
     const groupedList = useMemo(() => {
         const list = {};
+        // FIX: Check if planData and shoppingList exist before processing
         if (planData?.shoppingList) {
             planData.shoppingList.forEach(item => {
                 const category = item.category || 'Uncategorized';
@@ -36,18 +37,23 @@ export const ShoppingView = ({ planData, handleClearChecked, handleCheckItem, op
         setNewItemQuantity('');
     };
 
+    // FIX: A more robust check for whether a list exists to show the main UI
+    const listExists = planData && planData.shoppingList && planData.shoppingList.length > 0;
+
     return (
         <div>
             <div className="flex justify-between items-center mb-4">
-                <h2 className="text-3xl font-bold">Grocery Shopping List</h2>
-                {planData?.shoppingList?.length > 0 && (
-                    <div className="flex items-center gap-2 no-print">
-                        <button onClick={handlePrint} className="btn btn-ghost btn-sm">
+                <div className="flex items-center gap-4">
+                    <h2 className="text-3xl font-bold">Grocery Shopping List</h2>
+                    {listExists && (
+                        <button onClick={handlePrint} className="btn btn-ghost btn-sm no-print">
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03-.48.062-.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.662 0 1.18.568 1.12 1.227l-.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m0 0h11.32z" /></svg>
                             Print
                         </button>
-                        <button onClick={handleClearChecked} disabled={!planData?.shoppingList?.some(i => i.isChecked)} className="btn btn-error btn-sm">Clear Checked</button>
-                    </div>
+                    )}
+                </div>
+                {listExists && (
+                    <button onClick={handleClearChecked} disabled={!planData?.shoppingList?.some(i => i.isChecked)} className="btn btn-error btn-sm no-print">Clear Checked</button>
                 )}
             </div>
 
@@ -60,7 +66,7 @@ export const ShoppingView = ({ planData, handleClearChecked, handleCheckItem, op
                 </form>
             </div>
             
-            {planData?.shoppingList?.length === 0 ? (
+            {!listExists ? (
                 <div className="text-center p-10 bg-base-200 rounded-box no-print">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 mx-auto text-base-content opacity-30 mb-4"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c.51 0 .962-.344 1.087-.835l1.823-6.831a.75.75 0 00-.66-1.11H6.088L5.438 4.239A.75.75 0 004.658 3.5H3.75" /></svg>
                     <h3 className="text-xl font-bold">Your Shopping List is Empty</h3>

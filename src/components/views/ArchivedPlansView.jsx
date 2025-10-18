@@ -14,7 +14,7 @@ export const ArchivedPlansView = ({ archivedPlans, loadArchivedPlan, deleteArchi
                     <button onClick={() => setView('planning')} className="btn btn-primary">Create a New Plan</button>
                 </div>
             ) : (
-                archivedPlans.map((plan) => (
+                archivedPlans.sort((a, b) => b.savedAt.seconds - a.savedAt.seconds).map((plan) => (
                     <div key={plan.id} className="card card-side bg-base-100 shadow-md">
                         <div className="card-body">
                             <p className="text-sm opacity-70">Saved on: {new Date(plan.savedAt.seconds * 1000).toLocaleDateString()}</p>

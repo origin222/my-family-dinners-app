@@ -4,12 +4,12 @@ import toast, { Toaster } from 'react-hot-toast';
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc, getDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 
 // --- LOCAL IMPORTS ---
 import { convertToActualTime, mergeShoppingLists } from './utils/helpers';
 import { ThemeToggle, PlanSkeleton } from './components/UIComponents';
-import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView, CookingView } from './components/views';
+import { ShoppingView, ReviewView, TimingView, DetailView, FavoritesView, PlanningView, ShareView, CookingView, ArchivedPlansView } from './components/views';
 
 // --- CONFIGURATION ---
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent";
@@ -23,6 +23,7 @@ const finalGeminiApiKey = GEMINI_API_KEY_ENV || "";
 const MEAL_PLAN_DOC_ID = 'current_plan';
 const FAVORITES_COLLECTION_NAME = 'favorites';
 const SHARED_PLANS_COLLECTION_NAME = 'public/data/shared_plans';
+const ARCHIVED_PLANS_COLLECTION_NAME = 'archived_plans';
 
 // --- JSON SCHEMAS ---
 const PLAN_RESPONSE_SCHEMA = { type: "OBJECT", properties: { "weeklyPlan": { type: "ARRAY", items: { type: "OBJECT", properties: { "day": { "type": "STRING" }, "meal": { "type": "STRING" }, "description": { "type": "STRING" }, "calories": { "type": "NUMBER" }, "protein": { "type": "NUMBER" }, "carbs": { "type": "NUMBER" }, "fats": { "type": "NUMBER" } } } }, "shoppingList": { type: "ARRAY", items: { type: "OBJECT", properties: { "item": { "type": "STRING" }, "quantity": { "type": "STRING" }, "category": { "type": "STRING" }, "isChecked": { "type": "BOOLEAN" } } } } } };
@@ -50,6 +51,7 @@ const App = () => {
     const [selectedFavorites, setSelectedFavorites] = useState([]);
     const [sharedPlan, setSharedPlan] = useState(null);
     const [isCooking, setIsCooking] = useState(false);
+    const [archivedPlans, setArchivedPlans] = useState([]);
 
     const enterCookingMode = useCallback(() => setIsCooking(true), []);
     const exitCookingMode = useCallback(() => setIsCooking(false), []);
@@ -113,6 +115,45 @@ const App = () => {
                 .catch(() => toast.error("Failed to save favorite."));
         }
     }, [db, userId, detailedRecipe, favorites, planData, selectedMealIndex, deleteFavorite, appId]);
+
+    const handleArchivePlan = useCallback(async () => {
+        if (!db || !userId || !planData) { toast.error("No plan to archive."); return; }
+        const archiveCollectionRef = collection(db, 'artifacts', appId, 'users', userId, ARCHIVED_PLANS_COLLECTION_NAME);
+        const newArchive = { ...planData, savedAt: serverTimestamp() };
+        try {
+            await addDoc(archiveCollectionRef, newArchive);
+            toast.success("Plan archived successfully!");
+        } catch (e) {
+            console.error("Error archiving plan:", e);
+            toast.error("Failed to archive plan.");
+        }
+    }, [db, userId, planData, appId]);
+
+    const loadArchivedPlan = useCallback(async (archivedPlan) => {
+        if (!db || !userId) return;
+        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
+        try {
+            await setDoc(docRef, { ...archivedPlan, initialQuery: archivedPlan.initialQuery });
+            setView('review');
+            toast.success("Archived plan loaded as current plan!");
+        } catch(e) {
+            toast.error("Failed to load archived plan.");
+            console.error("Error loading archived plan:", e);
+        }
+    }, [db, userId, appId]);
+
+    const deleteArchivedPlan = useCallback(async (id) => {
+        if (!db || !userId) return;
+        if (window.confirm("Are you sure you want to permanently delete this archived plan?")) {
+            const docRef = doc(db, 'artifacts', appId, 'users', userId, ARCHIVED_PLANS_COLLECTION_NAME, id);
+            try {
+                await deleteDoc(docRef);
+                toast.success("Archived plan deleted.");
+            } catch (e) {
+                toast.error("Failed to delete archived plan.");
+            }
+        }
+    }, [db, userId, appId]);
 
     const retryFetch = useCallback(async (url, options, maxRetries = 3) => {
         let lastError;
@@ -269,7 +310,7 @@ const App = () => {
                 const data = docSnap.data();
                 setPlanData(data);
                 setView(currentView => {
-                    if (!['shopping', 'timing', 'detail', 'favorites', 'public', 'share'].includes(currentView)) {
+                    if (!['shopping', 'timing', 'detail', 'favorites', 'public', 'share', 'archived'].includes(currentView)) {
                         return 'review';
                     }
                     return currentView;
@@ -293,6 +334,19 @@ const App = () => {
         }, (e) => { console.error("Favorites Snapshot Error:", e); setError("Could not load saved favorites."); });
         return () => unsubscribe();
     }, [db, userId, isAuthReady]);
+
+    useEffect(() => {
+        if (!db || !userId || !isAuthReady) return;
+        const archiveCollectionRef = collection(db, 'artifacts', appId, 'users', userId, ARCHIVED_PLANS_COLLECTION_NAME);
+        const unsubscribe = onSnapshot(archiveCollectionRef, (snapshot) => {
+            const plans = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setArchivedPlans(plans);
+        }, (e) => {
+            console.error("Archived Plans Snapshot Error:", e);
+            setError("Could not load archived plans.");
+        });
+        return () => unsubscribe();
+    }, [db, userId, isAuthReady]);
     
     let content;
     const isConnecting = !isFirebaseInitialized || !isAuthReady;
@@ -306,12 +360,14 @@ const App = () => {
             case 'planning': 
                 content = <PlanningView query={query} setQuery={setQuery} useFavorites={useFavorites} setUseFavorites={setUseFavorites} processPlanGeneration={processPlanGeneration} favorites={favorites} selectedFavorites={selectedFavorites} handleFavoriteSelection={handleFavoriteSelection} />; 
                 break;
-            case 'review': content = planData ? <ReviewView planData={planData} mealsToRegenerate={mealsToRegenerate} regenerationConstraint={regenerationConstraint} setRegenerationConstraint={setRegenerationConstraint} processPlanGeneration={processPlanGeneration} toggleMealSelection={toggleMealSelection} handleSelectMeal={handleSelectMeal} generateShareLink={generateShareLink} handleStartOver={handleStartOver} /> : null; break;
-            case 'shopping': content = <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenShoppingCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} />; break;
+            case 'review': content = planData ? <ReviewView planData={planData} mealsToRegenerate={mealsToRegenerate} regenerationConstraint={regenerationConstraint} setRegenerationConstraint={setRegenerationConstraint} processPlanGeneration={processPlanGeneration} toggleMealSelection={toggleMealSelection} handleSelectMeal={handleSelectMeal} generateShareLink={generateShareLink} handleStartOver={handleStartOver} handleArchivePlan={handleArchivePlan} /> : null; break;
+            case 'shopping': content = <ShoppingView planData={planData} handleClearChecked={handleClearChecked} handleCheckItem={handleCheckItem} openCategory={openShoppingCategory} setOpenCategory={setOpenShoppingCategory} setView={setView} handleAddItem={handleAddItem} handleDeleteItem={handleDeleteItem} handlePrint={handlePrint} />; break;
             case 'favorites': content = <FavoritesView favorites={favorites} deleteFavorite={deleteFavorite} loadFavorite={loadFavorite} setView={setView} />; break;
             case 'timing': content = planData ? <TimingView meal={planData.weeklyPlan[selectedMealIndex]} dinnerTime={dinnerTime} setDinnerTime={setDinnerTime} generateRecipeDetail={generateRecipeDetail} isLoading={isLoading} /> : null; break;
             case 'detail': content = detailedRecipe ? <DetailView detailedRecipe={detailedRecipe} favorites={favorites} handleToggleFavorite={handleToggleFavorite} handlePrint={handlePrint} setView={setView} enterCookingMode={enterCookingMode} /> : null; break;
             case 'share': content = <ShareView sharedPlan={sharedPlan} setView={setView} />; break;
+            case 'cooking': content = detailedRecipe ? <CookingView recipe={detailedRecipe} onExit={exitCookingMode} /> : null; break;
+            case 'archived': content = <ArchivedPlansView archivedPlans={archivedPlans} loadArchivedPlan={loadArchivedPlan} deleteArchivedPlan={deleteArchivedPlan} setView={setView} />; break;
             default: content = ( <div className="text-center py-20 bg-base-200 rounded-box"> <p className="text-xl font-medium">Enter your preferences to start!</p> </div> );
         }
     }
@@ -336,6 +392,7 @@ const App = () => {
                         <button onClick={() => setView(planData ? 'review' : 'planning')} className={`btn ${['planning', 'review', 'timing', 'detail'].includes(view) ? 'btn-primary' : ''}`}>Dinner Plan</button>
                         <button onClick={() => setView('shopping')} className={`btn ${view === 'shopping' ? 'btn-primary' : ''}`}>Shopping List</button>
                         <button onClick={() => setView('favorites')} className={`btn ${view === 'favorites' ? 'btn-primary' : ''}`}>Favorites</button>
+                        <button onClick={() => setView('archived')} className={`btn ${view === 'archived' ? 'btn-primary' : ''}`}>Archived Plans</button>
                     </div>
                 )}
                 <div className="mt-8">
