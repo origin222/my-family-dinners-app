@@ -18,7 +18,20 @@ export const ArchivedPlansView = ({ archivedPlans, loadArchivedPlan, deleteArchi
                     <div key={plan.id} className="card card-side bg-base-100 shadow-md">
                         <div className="card-body">
                             <p className="text-sm opacity-70">Saved on: {new Date(plan.savedAt.seconds * 1000).toLocaleDateString()}</p>
-                            <h3 className="card-title text-secondary">Based on: "{plan.initialQuery}"</h3>
+                            
+                            {/* --- UI FIX: Display meal list instead of AI query --- */}
+                            <div className="my-2">
+                                <p className="font-bold text-secondary mb-2">Meals in this Plan:</p>
+                                <ul className="list-disc list-inside text-sm text-base-content/80 space-y-1">
+                                    {plan.weeklyPlan.slice(0, 4).map((meal, index) => (
+                                        <li key={index} className="truncate">{meal.meal}</li>
+                                    ))}
+                                    {plan.weeklyPlan.length > 4 && (
+                                        <li className="list-none text-xs opacity-60">...and {plan.weeklyPlan.length - 4} more</li>
+                                    )}
+                                </ul>
+                            </div>
+
                             <div className="card-actions justify-end">
                                 <button onClick={() => deleteArchivedPlan(plan.id)} className="btn btn-ghost btn-sm">Delete</button>
                                 <button onClick={() => loadArchivedPlan(plan)} className="btn btn-primary btn-sm">Load Plan</button>
