@@ -214,7 +214,11 @@ const App = () => {
             const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
             if (!jsonString) { throw new Error("AI response was empty."); }
             const parsedPlan = JSON.parse(jsonString);
-            const mergedList = mergeShoppingLists(parsedPlan.shoppingList, planData?.shoppingList);
+
+            // --- FIX: Ensure shoppingList is always an array ---
+            const newShoppingList = parsedPlan.shoppingList || [];
+
+            const mergedList = mergeShoppingLists(newShoppingList, planData?.shoppingList);
             const newPlanData = { ...parsedPlan, shoppingList: mergedList, initialQuery: query.trim() };
             const docRef = doc(db, 'artifacts', appId, 'users', userId, 'mealPlans', MEAL_PLAN_DOC_ID);
             await setDoc(docRef, newPlanData);
