@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import toast, { Toaster } from 'react-hot-toast';
+import AppRoutes from './app/routes';
+
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
@@ -409,3 +411,7 @@ const App = () => {
 };
 
 export default App;
+// Routed section (added)
+export function __RoutedSection() { 
+  return <AppRoutes />; 
+}
