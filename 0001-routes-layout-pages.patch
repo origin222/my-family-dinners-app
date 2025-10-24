@@ -1,0 +1,135 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: feat(routes): add Layout + Planner/Archive/Recipe pages and route map; expose routed section without altering existing UI
+
+---
+ create mode 100644 src/app/Layout.jsx
+ create mode 100644 src/app/routes.jsx
+ create mode 100644 src/pages/ArchivedPlansView.jsx
+ create mode 100644 src/pages/PlannerView.jsx
+ create mode 100644 src/pages/RecipeDetailView.jsx
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@
++// Routed pages (added)
++import AppRoutes from './app/routes';
+@@
++// Expose a routed section without changing your current UI.
++// When ready, render <__RoutedSection /> somewhere inside your App to preview routes.
++export function __RoutedSection() {
++  return <AppRoutes />;
++}
++
+*** End Patch
+*** Begin Patch
+*** Add File: src/app/Layout.jsx
++// src/app/Layout.jsx
++import React from 'react';
++import { NavLink, Outlet } from 'react-router-dom';
++
++const linkStyle = ({ isActive }) => ({
++  padding: '8px 12px',
++  textDecoration: 'none',
++  borderRadius: 8,
++  color: isActive ? '#fff' : '#111',
++  background: isActive ? '#0ea5e9' : 'transparent'
++});
++
++export default function Layout() {
++  return (
++    <div>
++      <header style={{display:'flex', gap:12, alignItems:'center', padding:'10px 16px', borderBottom:'1px solid #eee'}}>
++        <h1 style={{margin:0, fontSize:18}}>My Family Dinners</h1>
++        <nav style={{display:'flex', gap:8, marginLeft:'auto'}}>
++          <NavLink to="/" style={linkStyle} end>Home</NavLink>
++          <NavLink to="/planner" style={linkStyle}>Planner</NavLink>
++          <NavLink to="/archive" style={linkStyle}>Archive</NavLink>
++        </nav>
++      </header>
++      <main>
++        <Outlet />
++      </main>
++    </div>
++  );
++}
+*** End Patch
+*** Begin Patch
+*** Add File: src/app/routes.jsx
++// src/app/routes.jsx
++import React, { Suspense } from 'react';
++import { Routes, Route, Navigate } from 'react-router-dom';
++import Layout from './Layout';
++
++import PlannerView from '../pages/PlannerView';
++import ArchivedPlansView from '../pages/ArchivedPlansView';
++import RecipeDetailView from '../pages/RecipeDetailView';
++
++function Home() {
++  return (
++    <div style={{padding:'1rem'}}>
++      <h2>Home</h2>
++      <p>Welcome! Use the nav to explore Planner and Archive.</p>
++    </div>
++  );
++}
++
++export default function AppRoutes() {
++  return (
++    <Suspense fallback={<div style={{padding:16}}>Loading…</div>}>
++      <Routes>
++        <Route element={<Layout />}>
++          <Route index element={<Home />} />
++          <Route path="planner" element={<PlannerView />} />
++          <Route path="archive" element={<ArchivedPlansView />} />
++          <Route path="recipe/:id" element={<RecipeDetailView />} />
++          <Route path="*" element={<Navigate to="/" replace />} />
++        </Route>
++      </Routes>
++    </Suspense>
++  );
++}
+*** End Patch
+*** Begin Patch
+*** Add File: src/pages/PlannerView.jsx
++// src/pages/PlannerView.jsx
++import React from 'react';
++
++export default function PlannerView() {
++  return (
++    <div style={{ padding: '1rem' }}>
++      <h2>Planner</h2>
++      <p>Welcome to your weekly planner. (Wire real content here.)</p>
++    </div>
++  );
++}
+*** End Patch
+*** Begin Patch
+*** Add File: src/pages/RecipeDetailView.jsx
++// src/pages/RecipeDetailView.jsx
++import React from 'react';
++import { useParams } from 'react-router-dom';
++
++export default function RecipeDetailView() {
++  const { id } = useParams();
++  return (
++    <div style={{ padding: '1rem' }}>
++      <h2>Recipe Detail</h2>
++      <p>Recipe ID: {id}</p>
++      <p>(Render ingredients, steps, and nutrition here.)</p>
++    </div>
++  );
++}
+*** End Patch
+*** Begin Patch
+*** Add File: src/pages/ArchivedPlansView.jsx
++// src/pages/ArchivedPlansView.jsx
++import React from 'react';
++
++export default function ArchivedPlansView() {
++  return (
++    <div style={{ padding: '1rem' }}>
++      <h2>Archived Plans</h2>
++      <p>(List saved/archived meal plans here.)</p>
++    </div>
++  );
++}
+*** End Patch
