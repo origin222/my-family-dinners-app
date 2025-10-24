@@ -1,11 +1,15 @@
 // src/app/routes.jsx
-import React, { Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import React, { Suspense, lazy } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import Layout from './Layout';
+import RouteBoundary from '../components/RouteBoundary';
+import Skeleton from '../components/Skeleton';
 
-import PlannerView from '../pages/PlannerView';
-import ArchivedPlansView from '../pages/ArchivedPlansView';
-import RecipeDetailView from '../pages/RecipeDetailView';
+// Lazy pages
+const PlannerView = lazy(() => import('../pages/PlannerView'));
+const ArchivedPlansView = lazy(() => import('../pages/ArchivedPlansView'));
+const RecipeDetailView = lazy(() => import('../pages/RecipeDetailView'));
+const NotFound = lazy(() => import('../pages/NotFound'));
 
 function Home() {
   return (
@@ -18,14 +22,45 @@ function Home() {
 
 export default function AppRoutes() {
   return (
-    <Suspense fallback={<div style={{padding:16}}>Loading…</div>}>
+    <Suspense fallback={<Skeleton lines={5} />}>
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Home />} />
-          <Route path="planner" element={<PlannerView />} />
-          <Route path="archive" element={<ArchivedPlansView />} />
-          <Route path="recipe/:id" element={<RecipeDetailView />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route
+            path="planner"
+            element={
+              <Suspense fallback={<Skeleton lines={6} />}>
+                <PlannerView />
+              </Suspense>
+            }
+          />
+          <Route
+            path="archive"
+            element={
+              <Suspense fallback={<Skeleton lines={4} />}>
+                <ArchivedPlansView />
+              </Suspense>
+            }
+          />
+          <Route
+            path="recipe/:id"
+            element={
+              <RouteBoundary>
+                <Suspense fallback={<Skeleton lines={7} />}>
+                  <RecipeDetailView />
+                </Suspense>
+              </RouteBoundary>
+            }
+          />
+          {/* NotFound: friendly page instead of redirect */}
+          <Route
+            path="*"
+            element={
+              <Suspense fallback={<Skeleton lines={3} />}>
+                <NotFound />
+              </Suspense>
+            }
+          />
         </Route>
       </Routes>
     </Suspense>
