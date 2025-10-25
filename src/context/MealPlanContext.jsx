@@ -1,29 +1,110 @@
 // src/context/MealPlanContext.jsx
-import React, { createContext, useContext, useMemo } from 'react';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import React, { createContext, useContext, useMemo } from "react";
+import { useLocalStorage } from "../hooks/useLocalStorage";
 
 /**
- * Central store for meal planning state.
- * Keeps selections across refreshes (localStorage).
+ * MealPlanContext
+ * ----------------
+ * Single source of truth for:
+ * - current weekly plan (weekStart + days map)
+ * - recipes map (future-friendly)
+ * - archived plans list
+ *
+ * Storage: localStorage (no Firebase required).
+ * You can later add Firestore and keep this API the same.
  */
+
 const MealPlanContext = createContext(null);
 
 export function MealPlanProvider({ children }) {
-  const [plan, setPlan] = useLocalStorage('meal-plan', {
+  // Current plan: { weekStart: 'YYYY-MM-DD', days: { [isoDate]: [{id,title,notes}] } }
+  const [plan, setPlan] = useLocalStorage("meal-plan", {
     weekStart: null,
-    days: {}, // e.g., { '2025-10-23': [{ id, title, notes }] }
+    days: {},
   });
-  const [recipes, setRecipes] = useLocalStorage('recipes', {}); // id -> recipe
 
-  const value = useMemo(() => ({
-    plan, setPlan, recipes, setRecipes
-  }), [plan, recipes]);
+  // Recipes (not required for archive features, kept for future)
+  const [recipes, setRecipes] = useLocalStorage("recipes", {});
 
-  return <MealPlanContext.Provider value={value}>{children}</MealPlanContext.Provider>;
+  // Archives: array of { id, plan, archivedAt }
+  const [archivedPlans, setArchivedPlans] = useLocalStorage(
+    "archived-plans",
+    []
+  );
+
+  // ---- Actions ----
+
+  function addRecipe(recipe) {
+    if (!recipe || !recipe.id) return;
+    setRecipes((prev) => ({ ...prev, [recipe.id]: recipe }));
+  }
+
+  function archiveCurrentPlan() {
+    if (!plan || !plan.weekStart) {
+      alert("Set a week start before archiving.");
+      return;
+    }
+    const entry = {
+      id: String(Date.now()),
+      plan,
+      archivedAt: new Date().toISOString(),
+    };
+    setArchivedPlans((prev) => [entry, ...prev]);
+    setPlan({ weekStart: null, days: {} });
+  }
+
+  function restoreArchivedPlan(id) {
+    setArchivedPlans((prev) => {
+      const found = prev.find((p) => p.id === id);
+      if (found) {
+        // Put archived plan back as current plan
+        setPlan(found.plan);
+        // Remove it from archives after restoring (optional but typical)
+        return prev.filter((p) => p.id !== id);
+      }
+      return prev;
+    });
+  }
+
+  function clearAllArchives() {
+    const ok = window.confirm(
+      "Are you sure you want to delete ALL archived plans? This cannot be undone."
+    );
+    if (!ok) return;
+    setArchivedPlans([]);
+  }
+
+  const value = useMemo(
+    () => ({
+      // state
+      plan,
+      recipes,
+      archivedPlans,
+      // setters
+      setPlan,
+      setRecipes,
+      setArchivedPlans,
+      // actions
+      addRecipe,
+      archiveCurrentPlan,
+      restoreArchivedPlan,
+      clearAllArchives,
+    }),
+    [plan, recipes, archivedPlans]
+  );
+
+  return (
+    <MealPlanContext.Provider value={value}>
+      {children}
+    </MealPlanContext.Provider>
+  );
 }
 
 export function useMealPlan() {
   const ctx = useContext(MealPlanContext);
-  if (!ctx) throw new Error('useMealPlan must be used within MealPlanProvider');
+  if (!ctx) {
+    throw new Error("useMealPlan must be used within MealPlanProvider");
+  }
   return ctx;
 }
+
