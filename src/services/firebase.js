@@ -1,6 +1,14 @@
 // src/services/firebase.js
-// Safe Firebase init (runs only if env is present)
-const cfg = {
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+
+/**
+ * firebase.js
+ * ------------
+ * This safely initializes Firebase only once.
+ * It checks if an app already exists, and reuses it instead of re-creating it.
+ */
+const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
@@ -9,17 +17,8 @@ const cfg = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-let app = null;
-let db = null;
+// ✅ Only initialize if there are no existing Firebase apps
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
-export async function getFirebase() {
-  if (!cfg.apiKey) return { app: null, db: null }; // not configured
-  const { initializeApp, getApps } = await import('firebase/app');
-  const { getFirestore } = await import('firebase/firestore');
-
-  if (!getApps().length) {
-    app = initializeApp(cfg);
-  }
-  db = getFirestore();
-  return { app, db };
-}
+export const db = getFirestore(app);
+export default app;
