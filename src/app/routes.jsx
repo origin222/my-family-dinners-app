@@ -1,31 +1,44 @@
 // src/app/routes.jsx
-import React, { Suspense, lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
-import Layout from './Layout';
-import RouteBoundary from '../components/RouteBoundary';
-import Skeleton from '../components/Skeleton';
+import React, { Suspense, lazy } from "react";
+import { Routes, Route } from "react-router-dom";
+import Layout from "./Layout";
+import RouteBoundary from "../components/RouteBoundary";
+import Skeleton from "../components/Skeleton";
 
-// Lazy pages
-const PlannerView = lazy(() => import('../pages/PlannerView'));
-const ArchivedPlansView = lazy(() => import('../pages/ArchivedPlansView'));
-const RecipeDetailView = lazy(() => import('../pages/RecipeDetailView'));
-const NotFound = lazy(() => import('../pages/NotFound'));
+// Lazy load pages (this makes loading smoother)
+const PlannerView = lazy(() => import("../pages/PlannerView"));
+const ArchivedPlansView = lazy(() => import("../pages/ArchivedPlansView"));
+const RecipeDetailView = lazy(() => import("../pages/RecipeDetailView"));
+const NotFound = lazy(() => import("../pages/NotFound"));
 
-function Home() {
-  return (
-    <div style={{padding:'1rem'}}>
-      <h2>Home</h2>
-      <p>Welcome! Use the nav to explore Planner and Archive.</p>
-    </div>
-  );
-}
-
+/**
+ * AppRoutes
+ * ----------
+ * Controls all navigation inside your app.
+ * Defines which page appears when you visit a URL like:
+ *   /         -> Home (which shows the Planner)
+ *   /planner  -> Planner (your main UI)
+ *   /archive  -> Archived meal plans
+ *   /recipe/1 -> Example recipe detail page
+ */
 export default function AppRoutes() {
   return (
+    // Suspense shows a loading animation while a page is loading
     <Suspense fallback={<Skeleton lines={5} />}>
       <Routes>
+        {/* The Layout adds the top navigation bar */}
         <Route element={<Layout />}>
-          <Route index element={<Home />} />
+          {/* Home route - same as Planner */}
+          <Route
+            index
+            element={
+              <Suspense fallback={<Skeleton lines={6} />}>
+                <PlannerView />
+              </Suspense>
+            }
+          />
+
+          {/* Planner route - your main working app */}
           <Route
             path="planner"
             element={
@@ -34,6 +47,8 @@ export default function AppRoutes() {
               </Suspense>
             }
           />
+
+          {/* Archived meal plans */}
           <Route
             path="archive"
             element={
@@ -42,6 +57,8 @@ export default function AppRoutes() {
               </Suspense>
             }
           />
+
+          {/* Recipe detail page */}
           <Route
             path="recipe/:id"
             element={
@@ -52,7 +69,8 @@ export default function AppRoutes() {
               </RouteBoundary>
             }
           />
-          {/* NotFound: friendly page instead of redirect */}
+
+          {/* 404 - Page not found */}
           <Route
             path="*"
             element={
