@@ -1,9 +1,9 @@
 // src/context/MealPlanContext.jsx
 import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { getFirebase } from '../services/firebase';
+import { db } from '../services/firebase'; // ← reuse the singleton (may be null)
 
-// simple uid fallback (replace with real auth later)
+// Very simple anon uid; replace later with real Firebase Auth
 function getUid() {
   try {
     const k = 'uid';
@@ -20,104 +20,109 @@ function getUid() {
 const MealPlanContext = createContext(null);
 
 export function MealPlanProvider({ children }) {
-  // Local state (always active)
+  // Local-first state (always works, even without Firebase)
   const [plan, setPlan] = useLocalStorage('meal-plan', {
     weekStart: null,
     days: {}
   });
-  const [recipes, setRecipes] = useLocalStorage('recipes', {});
+  const [recipes, setRecipes] = useLocalStorage('recipes', {}); // id -> recipe
   const [archivedPlans, setArchivedPlans] = useLocalStorage('archived-plans', []);
 
-  // Cloud state toggles
+  // Cloud gating
   const uidRef = useRef(null);
   const cloudReadyRef = useRef(false);
 
-  // Try to load from Firestore once (if configured)
+  // Initial load from Firestore (best-effort, only if db exists)
   useEffect(() => {
+    if (!db) return; // no Firebase config → stay local-only
+
     (async () => {
       try {
-        const { db } = await getFirebase();
-        if (!db) return; // no env config => stay local only
         const uid = getUid();
         uidRef.current = uid;
 
-        const { doc, getDoc, setDoc, collection, getDocs, query, orderBy, limit } =
-          await import('firebase/firestore');
+        const {
+          doc, getDoc, setDoc,
+          collection, getDocs, query, orderBy, limit
+        } = await import('firebase/firestore');
 
-        // Load plan
-        const planSnap = await getDoc(doc(db, 'users', uid, 'state', 'currentPlan'));
+        // Load plan (or seed from local)
+        const planRef = doc(db, 'users', uid, 'state', 'currentPlan');
+        const planSnap = await getDoc(planRef);
         if (planSnap.exists()) {
           const data = planSnap.data();
           if (data?.plan) setPlan(data.plan);
         } else {
-          // seed remote with local so both match
-          await setDoc(doc(db, 'users', uid, 'state', 'currentPlan'), { plan });
+          await setDoc(planRef, { plan });
         }
 
-        // Load recipes
-        const rSnap = await getDoc(doc(db, 'users', uid, 'state', 'recipes'));
-        if (rSnap.exists()) {
-          const data = rSnap.data();
+        // Load recipes (or seed from local)
+        const recRef = doc(db, 'users', uid, 'state', 'recipes');
+        const recSnap = await getDoc(recRef);
+        if (recSnap.exists()) {
+          const data = recSnap.data();
           if (data?.recipes) setRecipes(data.recipes);
         } else {
-          await setDoc(doc(db, 'users', uid, 'state', 'recipes'), { recipes });
+          await setDoc(recRef, { recipes });
         }
 
-        // Load recent archives (limit for performance)
-        const archQ = query(collection(db, 'users', uid, 'archives'), orderBy('archivedAt', 'desc'), limit(50));
+        // Load recent archives
+        const archQ = query(
+          collection(db, 'users', uid, 'archives'),
+          orderBy('archivedAt', 'desc'),
+          limit(50)
+        );
         const archDocs = await getDocs(archQ);
         const loaded = archDocs.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (loaded?.length) setArchivedPlans(loaded);
+        if (loaded.length) setArchivedPlans(loaded);
 
         cloudReadyRef.current = true;
       } catch (e) {
-        console.warn('Firestore load skipped/failure:', e);
+        console.warn('Firestore load skipped:', e);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [db]);
 
-  // Save to Firestore when local plan changes (if cloud is ready)
+  // Save plan to Firestore when it changes (if cloud ready)
   useEffect(() => {
+    if (!db) return;
     (async () => {
       try {
         if (!cloudReadyRef.current) return;
-        const { db } = await getFirebase();
-        if (!db) return;
         const { doc, setDoc } = await import('firebase/firestore');
         await setDoc(doc(db, 'users', uidRef.current, 'state', 'currentPlan'), { plan }, { merge: true });
       } catch {}
     })();
-  }, [plan]);
+  }, [plan, db]);
 
-  // Save recipes map to Firestore on change
+  // Save recipes to Firestore when they change
   useEffect(() => {
+    if (!db) return;
     (async () => {
       try {
         if (!cloudReadyRef.current) return;
-        const { db } = await getFirebase();
-        if (!db) return;
         const { doc, setDoc } = await import('firebase/firestore');
         await setDoc(doc(db, 'users', uidRef.current, 'state', 'recipes'), { recipes }, { merge: true });
       } catch {}
     })();
-  }, [recipes]);
+  }, [recipes, db]);
 
+  // Local helpers
   function addRecipe(recipe) {
     if (!recipe?.id) return;
     setRecipes(prev => ({ ...prev, [recipe.id]: recipe }));
   }
 
   async function archiveCurrentPlan() {
-    // Update local first
+    // Local-first update (always works)
     const entry = { id: String(Date.now()), plan, archivedAt: new Date().toISOString() };
     setArchivedPlans(prev => [entry, ...prev]);
     setPlan({ weekStart: null, days: {} });
 
-    // Try to persist to Firestore (best-effort)
+    // Best-effort Firestore write
+    if (!db) return;
     try {
-      const { db } = await getFirebase();
-      if (!db) return;
       const { doc, setDoc } = await import('firebase/firestore');
       await setDoc(doc(db, 'users', uidRef.current, 'archives', entry.id), entry);
     } catch {}
