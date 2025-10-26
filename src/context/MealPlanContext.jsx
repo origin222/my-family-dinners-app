@@ -11,13 +11,23 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
  * - archived plans list
  *
  * Storage: localStorage (no Firebase required).
- * You can later add Firestore and keep this API the same.
  *
- * NEW: Prevent archiving the same week twice.
- * Rule: A week is uniquely identified by its `weekStart` date (YYYY-MM-DD).
+ * RULE ENFORCED HERE:
+ *   You can archive a given week (identified by `plan.weekStart`) only ONCE.
+ *   If you attempt to archive the same week again, we UPDATE the existing archive
+ *   entry instead of creating a duplicate.
  */
 
 const MealPlanContext = createContext(null);
+
+// Small helper to ensure weekStart is a YYYY-MM-DD string
+function toISODate(d) {
+  const date = d instanceof Date ? d : new Date(d || Date.now());
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 export function MealPlanProvider({ children }) {
   // Current plan: { weekStart: 'YYYY-MM-DD', days: { [isoDate]: [{id,title,notes}] } }
@@ -43,35 +53,60 @@ export function MealPlanProvider({ children }) {
   }
 
   /**
-   * Archive the current plan, but only once per weekStart.
-   * If an archive with the same weekStart already exists, do nothing and notify.
+   * Archive the current plan ONLY ONCE per weekStart.
+   * Behavior:
+   * - If no weekStart: stop and notify.
+   * - If an entry with the same weekStart exists: UPDATE that entry (no duplicates).
+   * - Else: CREATE a new archive entry.
+   * Returns:
+   *   { ok: true, mode: 'created' | 'updated', id: string } on success
+   *   { ok: false, reason: 'no-week-start' } on failure
    */
   function archiveCurrentPlan() {
     if (!plan || !plan.weekStart) {
+      // Friendly guard; UI can also check return value.
       alert("Set a week start before archiving.");
-      return;
+      return { ok: false, reason: "no-week-start" };
     }
 
-    // Check for an existing archive with the same weekStart
-    const alreadyArchived = archivedPlans.some(
-      (p) => p?.plan?.weekStart === plan.weekStart
-    );
+    const normalizedWeekStart = toISODate(plan.weekStart);
 
-    if (alreadyArchived) {
-      alert(
-        `This week (${plan.weekStart}) has already been archived. You can only archive a given week once.`
+    const result = { ok: true, mode: "created", id: "" };
+
+    setArchivedPlans((prev) => {
+      // Find any existing archive for the same weekStart
+      const existingIndex = prev.findIndex(
+        (p) => p?.plan?.weekStart === normalizedWeekStart
       );
-      return;
-    }
 
-    const entry = {
-      id: String(Date.now()),
-      plan,
-      archivedAt: new Date().toISOString(),
-    };
+      const newEntry = {
+        id:
+          existingIndex !== -1
+            ? prev[existingIndex].id // keep the same ID if updating
+            : String(Date.now()),
+        plan: { ...plan, weekStart: normalizedWeekStart },
+        archivedAt: new Date().toISOString(),
+      };
 
-    setArchivedPlans((prev) => [entry, ...prev]);
+      if (existingIndex !== -1) {
+        // UPDATE existing archive instead of creating a duplicate
+        const next = [...prev];
+        next[existingIndex] = newEntry;
+        result.mode = "updated";
+        result.id = newEntry.id;
+        return next;
+      }
+
+      // CREATE new archive
+      result.mode = "created";
+      result.id = newEntry.id;
+      return [newEntry, ...prev];
+    });
+
+    // After archiving, clear the current plan (matches your original UX)
     setPlan({ weekStart: null, days: {} });
+
+    return result;
   }
 
   function restoreArchivedPlan(id) {

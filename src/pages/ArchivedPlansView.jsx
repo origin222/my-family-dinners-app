@@ -32,7 +32,8 @@ export default function ArchivedPlansView() {
 
       <p style={{ color: "#64748b", marginTop: 8 }}>
         Note: Each week can be archived <strong>only once</strong> (based on the
-        week’s start date).
+        week’s start date). Re-archiving the same week will now <strong>update</strong> the
+        existing archive instead of creating a duplicate.
       </p>
 
       {archivedPlans.length === 0 ? (
