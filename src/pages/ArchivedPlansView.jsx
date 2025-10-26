@@ -30,6 +30,11 @@ export default function ArchivedPlansView() {
         )}
       </div>
 
+      <p style={{ color: "#64748b", marginTop: 8 }}>
+        Note: Each week can be archived <strong>only once</strong> (based on the
+        week’s start date).
+      </p>
+
       {archivedPlans.length === 0 ? (
         <p style={{ color: "#64748b", marginTop: 12 }}>
           You don’t have any archived plans yet. Go to the Planner page and

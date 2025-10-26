@@ -12,6 +12,9 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
  *
  * Storage: localStorage (no Firebase required).
  * You can later add Firestore and keep this API the same.
+ *
+ * NEW: Prevent archiving the same week twice.
+ * Rule: A week is uniquely identified by its `weekStart` date (YYYY-MM-DD).
  */
 
 const MealPlanContext = createContext(null);
@@ -23,7 +26,7 @@ export function MealPlanProvider({ children }) {
     days: {},
   });
 
-  // Recipes (not required for archive features, kept for future)
+  // Recipes (kept for future features)
   const [recipes, setRecipes] = useLocalStorage("recipes", {});
 
   // Archives: array of { id, plan, archivedAt }
@@ -39,16 +42,34 @@ export function MealPlanProvider({ children }) {
     setRecipes((prev) => ({ ...prev, [recipe.id]: recipe }));
   }
 
+  /**
+   * Archive the current plan, but only once per weekStart.
+   * If an archive with the same weekStart already exists, do nothing and notify.
+   */
   function archiveCurrentPlan() {
     if (!plan || !plan.weekStart) {
       alert("Set a week start before archiving.");
       return;
     }
+
+    // Check for an existing archive with the same weekStart
+    const alreadyArchived = archivedPlans.some(
+      (p) => p?.plan?.weekStart === plan.weekStart
+    );
+
+    if (alreadyArchived) {
+      alert(
+        `This week (${plan.weekStart}) has already been archived. You can only archive a given week once.`
+      );
+      return;
+    }
+
     const entry = {
       id: String(Date.now()),
       plan,
       archivedAt: new Date().toISOString(),
     };
+
     setArchivedPlans((prev) => [entry, ...prev]);
     setPlan({ weekStart: null, days: {} });
   }
@@ -59,7 +80,7 @@ export function MealPlanProvider({ children }) {
       if (found) {
         // Put archived plan back as current plan
         setPlan(found.plan);
-        // Remove it from archives after restoring (optional but typical)
+        // Remove it from archives after restoring (common pattern)
         return prev.filter((p) => p.id !== id);
       }
       return prev;
@@ -107,4 +128,3 @@ export function useMealPlan() {
   }
   return ctx;
 }
-
