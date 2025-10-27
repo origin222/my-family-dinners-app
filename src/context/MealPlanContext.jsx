@@ -1,51 +1,81 @@
 // src/context/MealPlanContext.jsx
-import React, { createContext, useContext, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useMemo } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 
 /**
  * MealPlanContext
  * ----------------
- * Single source of truth for:
- * - current weekly plan (weekStart + days map)
- * - recipes map (future-friendly)
- * - archived plans list
+ * - current plan: { weekStart: 'YYYY-MM-DD', days: { [isoDate]: [{id,title,notes}] } }
+ * - recipes: future-friendly map
+ * - archivedPlans: [{ id, plan, archivedAt }]
  *
- * Storage: localStorage (no Firebase required).
- *
- * RULE ENFORCED HERE:
- *   You can archive a given week (identified by `plan.weekStart`) only ONCE.
- *   If you attempt to archive the same week again, we UPDATE the existing archive
- *   entry instead of creating a duplicate.
+ * Rules:
+ * 1) A week can be archived only once (identified by plan.weekStart).
+ * 2) If archiving the same week again, we UPDATE the existing archive in place.
+ * 3) On load, we dedupe any past duplicates (keep the most recent by archivedAt).
+ * 4) Emits window event 'archive:result' with { ok, mode, id } so UI can show toasts.
  */
 
-const MealPlanContext = createContext(null);
-
-// Small helper to ensure weekStart is a YYYY-MM-DD string
+// --- helpers ---
 function toISODate(d) {
-  const date = d instanceof Date ? d : new Date(d || Date.now());
+  if (!d) return null;
+  const date = d instanceof Date ? d : new Date(d);
+  if (isNaN(date.getTime())) return null;
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
+function normalizeWeekStart(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  return toISODate(value);
+}
+
+// Deduplicate archives by normalized weekStart, keep the most recent archivedAt
+function dedupeArchives(list) {
+  const map = new Map(); // weekStart -> item
+  for (const item of list || []) {
+    const ws = normalizeWeekStart(item?.plan?.weekStart);
+    if (!ws) continue;
+    const prev = map.get(ws);
+    if (!prev) {
+      map.set(ws, item);
+    } else {
+      const prevTime = new Date(prev.archivedAt || 0).getTime();
+      const curTime = new Date(item.archivedAt || 0).getTime();
+      map.set(ws, curTime >= prevTime ? item : prev);
+    }
+  }
+  const unique = Array.from(map.values());
+  unique.sort((a, b) => new Date(b.archivedAt) - new Date(a.archivedAt));
+  return unique;
+}
+
+// --- context ---
+const MealPlanContext = createContext(null);
+
 export function MealPlanProvider({ children }) {
-  // Current plan: { weekStart: 'YYYY-MM-DD', days: { [isoDate]: [{id,title,notes}] } }
   const [plan, setPlan] = useLocalStorage("meal-plan", {
     weekStart: null,
     days: {},
   });
 
-  // Recipes (kept for future features)
   const [recipes, setRecipes] = useLocalStorage("recipes", {});
 
-  // Archives: array of { id, plan, archivedAt }
-  const [archivedPlans, setArchivedPlans] = useLocalStorage(
-    "archived-plans",
-    []
-  );
+  const [archivedPlans, setArchivedPlans] = useLocalStorage("archived-plans", []);
 
-  // ---- Actions ----
+  // One-time migration: dedupe any existing duplicates in storage
+  useEffect(() => {
+    if (!Array.isArray(archivedPlans) || archivedPlans.length <= 1) return;
+    const deduped = dedupeArchives(archivedPlans);
+    if (deduped.length !== archivedPlans.length) {
+      setArchivedPlans(deduped);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run once
+
+  // ---- actions ----
 
   function addRecipe(recipe) {
     if (!recipe || !recipe.id) return;
@@ -53,58 +83,68 @@ export function MealPlanProvider({ children }) {
   }
 
   /**
-   * Archive the current plan ONLY ONCE per weekStart.
-   * Behavior:
-   * - If no weekStart: stop and notify.
-   * - If an entry with the same weekStart exists: UPDATE that entry (no duplicates).
-   * - Else: CREATE a new archive entry.
+   * Archive current plan, enforcing "only once per week".
+   * If an archive already exists for the same weekStart, we UPDATE that entry.
    * Returns:
-   *   { ok: true, mode: 'created' | 'updated', id: string } on success
-   *   { ok: false, reason: 'no-week-start' } on failure
+   *   { ok: true, mode: 'created'|'updated', id }
+   *   { ok: false, reason: 'no-week-start' }
+   * Also emits: window.dispatchEvent(new CustomEvent('archive:result', { detail: result }))
    */
   function archiveCurrentPlan() {
-    if (!plan || !plan.weekStart) {
-      // Friendly guard; UI can also check return value.
-      alert("Set a week start before archiving.");
-      return { ok: false, reason: "no-week-start" };
+    const normalizedWS = normalizeWeekStart(plan?.weekStart);
+    if (!normalizedWS) {
+      const fail = { ok: false, reason: "no-week-start" };
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("archive:result", { detail: fail }));
+      }
+      alert("Set a valid Week Start before archiving.");
+      return fail;
     }
 
-    const normalizedWeekStart = toISODate(plan.weekStart);
-
-    const result = { ok: true, mode: "created", id: "" };
+    let result = { ok: true, mode: "created", id: "" };
 
     setArchivedPlans((prev) => {
-      // Find any existing archive for the same weekStart
-      const existingIndex = prev.findIndex(
-        (p) => p?.plan?.weekStart === normalizedWeekStart
+      const prevList = Array.isArray(prev) ? prev : [];
+
+      // Find if an entry already exists for this weekStart
+      const existingIndex = prevList.findIndex(
+        (p) => normalizeWeekStart(p?.plan?.weekStart) === normalizedWS
       );
 
       const newEntry = {
         id:
           existingIndex !== -1
-            ? prev[existingIndex].id // keep the same ID if updating
+            ? prevList[existingIndex].id
             : String(Date.now()),
-        plan: { ...plan, weekStart: normalizedWeekStart },
+        plan: { ...plan, weekStart: normalizedWS },
         archivedAt: new Date().toISOString(),
       };
 
+      let next;
       if (existingIndex !== -1) {
-        // UPDATE existing archive instead of creating a duplicate
-        const next = [...prev];
+        // Update existing entry
+        next = [...prevList];
         next[existingIndex] = newEntry;
         result.mode = "updated";
         result.id = newEntry.id;
-        return next;
+      } else {
+        // Create new entry
+        next = [newEntry, ...prevList];
+        result.mode = "created";
+        result.id = newEntry.id;
       }
 
-      // CREATE new archive
-      result.mode = "created";
-      result.id = newEntry.id;
-      return [newEntry, ...prev];
+      // Safety net: dedupe again
+      return dedupeArchives(next);
     });
 
-    // After archiving, clear the current plan (matches your original UX)
+    // Clear current plan (keeps original UX)
     setPlan({ weekStart: null, days: {} });
+
+    // Announce result for toasts
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("archive:result", { detail: result }));
+    }
 
     return result;
   }
@@ -113,9 +153,7 @@ export function MealPlanProvider({ children }) {
     setArchivedPlans((prev) => {
       const found = prev.find((p) => p.id === id);
       if (found) {
-        // Put archived plan back as current plan
         setPlan(found.plan);
-        // Remove it from archives after restoring (common pattern)
         return prev.filter((p) => p.id !== id);
       }
       return prev;
@@ -158,8 +196,6 @@ export function MealPlanProvider({ children }) {
 
 export function useMealPlan() {
   const ctx = useContext(MealPlanContext);
-  if (!ctx) {
-    throw new Error("useMealPlan must be used within MealPlanProvider");
-  }
+  if (!ctx) throw new Error("useMealPlan must be used within MealPlanProvider");
   return ctx;
 }
